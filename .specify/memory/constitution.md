@@ -1,16 +1,21 @@
 <!--
 Sync Impact Report
-Version change: none → 1.0.0
-Principles defined (template placeholders → concrete principles):
-  - [PRINCIPLE_1_NAME] → I. Code Quality
-  - [PRINCIPLE_2_NAME] → II. Testing Standards (NON-NEGOTIABLE)
-  - [PRINCIPLE_3_NAME] → III. User Experience Consistency
-  - [PRINCIPLE_4_NAME] → IV. Performance Requirements
-  - [PRINCIPLE_5_NAME] → removed (four principles requested)
-Added sections:
-  - Additional Constraints (replaces [SECTION_2_NAME])
-  - Development Workflow & Quality Gates (replaces [SECTION_3_NAME])
+Version change: 1.0.0 → 1.1.0
+Modified sections:
+  - Additional Constraints: the language and runtime clause was redefined from
+    "Python >= 3.13 as declared in pyproject.toml" to "TypeScript on Node (Next.js App Router)
+    with dependencies declared in package.json". Rationale: the constitution was ratified before
+    the stack for feature 001-animated-character-chat was chosen, and it recorded the language of
+    the repository scaffolding rather than a decision. The clause's intent - one declared language
+    and runtime, dependencies declared in a manifest and never installed ad hoc - is unchanged.
+Principles: unchanged (I. Code Quality, II. Testing Standards, III. User Experience Consistency,
+  IV. Performance Requirements)
+Added sections: none
 Removed sections: none
+Migration of existing code: the repository's `main.py`, `pyproject.toml`, `.python-version`, and
+  `.venv` are scaffolding unused by any feature. They are NOT grandfathered - they are to be
+  removed before feature 001 merges, or explicitly retained if a Python service is added as a
+  deliberate portfolio goal (see D12 in specs/001-animated-character-chat/research.md).
 Follow-up TODOs: none
 -->
 
@@ -102,8 +107,9 @@ Numbers make those properties reviewable; adjectives do not.
 
 ## Additional Constraints
 
-- Language and runtime: Python >= 3.13 as declared in `pyproject.toml`. Dependencies are
-  declared there, never installed ad hoc.
+- Language and runtime: TypeScript in `strict` mode on Node (Next.js App Router), with every
+  dependency declared in `package.json` and never installed ad hoc. One declared language and
+  runtime per deployable unit; adding a second requires an amendment to this clause.
 - Secrets and API keys MUST come from environment or a secret store. They MUST NOT appear in
   source, fixtures, logs, or committed configuration.
 - User conversation content MUST NOT be logged at any level above debug, and debug logging of
@@ -142,4 +148,4 @@ Compliance review: principle adherence is verified at code review for every PR. 
 violations of the same principle are grounds for amending the principle or adding an automated
 check, rather than repeating the review comment.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-31 | **Last Amended**: 2026-08-31
+**Version**: 1.1.0 | **Ratified**: 2026-08-31 | **Last Amended**: 2026-08-31

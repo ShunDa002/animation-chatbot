@@ -1,10 +1,44 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+# Dependencies
+node_modules/
 
-# Virtual environments
-.venv
+# Next.js build output
+.next/
+out/
+next-env.d.ts
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# Secrets - never commit any of these (constitution: Additional Constraints)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# Vercel
+.vercel
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+.idea/
+
+# TypeScript
+*.tsbuildinfo
+
+# Playwright
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

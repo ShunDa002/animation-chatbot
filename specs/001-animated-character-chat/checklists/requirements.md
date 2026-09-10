@@ -43,4 +43,7 @@
   Python service purely to showcase Python in the portfolio. The description already rules it out on
   technical grounds. If it is wanted for portfolio reasons, raise it during `/speckit-plan`; nothing
   in this spec changes either way.
+- Re-validated 2026-08-31 on a second `/speckit-specify` pass with a restated description. The
+  restatement carried no new behaviour, so only the Input block was resynced; all requirements,
+  scenarios, and criteria were re-checked and still pass. No duplicate feature directory created.
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.

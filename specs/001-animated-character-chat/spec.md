@@ -7,10 +7,36 @@
 **Status**: Draft
 
 **Input**: User description: single-page web app where an animated 2D character sits beside a chat
-panel; the visitor types, a language model replies as streaming text, and the character reacts with
-a matching animation. Text-only, public portfolio demo, free-tier inference, no accounts, no stored
-data. Four separated concerns — presentation, character rendering, conversation, inference proxy —
-with a single emotion value as the entire vocabulary between conversation and character.
+panel; the visitor types, a language model replies, the reply appears as text, and the character
+reacts with a matching animation. Text-only, no voice. Public portfolio demo, free-tier inference,
+no accounts, no stored data. Four deliberately separated concerns: presentation (character canvas,
+message log, input box); character rendering (an imperative 60fps render loop over a rigged model,
+knowing nothing about chat); conversation (turn history, sending it away, receiving a reply,
+extracting the emotional cue); and an inference proxy as the only server-side piece (holds the API
+key, attaches the persona prompt, forwards to the provider). The design rests on the seam between
+character rendering and conversation: conversation hands the character a single emotion value and
+nothing else — that is the entire vocabulary between them, so either side is replaceable.
+
+## Clarifications
+
+### Session 2026-08-31
+
+- Q: Since the demo has no accounts and stores no data, what should the server use to tell one
+  visitor from another when it enforces the request limit? → A: Option D — no per-visitor limit; a
+  single global daily request ceiling for the whole demo, with no visitor identification of any kind.
+- Q: What concrete numbers should the three caps use — longest visitor message, past turns sent
+  onward, and global daily request ceiling? → A: 300 characters, the 6 most recent messages, and 150
+  requests per day.
+- Q: When a request to the model provider hangs or fails, how long should the demo wait before
+  giving up, and should it retry automatically? → A: 20-second timeout, no automatic retry — the
+  visitor resends manually.
+- Q: Under a reduced-motion preference, should the character still show its emotional reaction in a
+  still form or drop emotional feedback entirely? → A: Keep the emotion as a still expression change
+  with a brief cross-fade; suppress idle drift and reaction motion.
+- Q: How should a screen-reader user be told what the character is doing and what the reply says,
+  given the reply arrives progressively? → A: Announce the reply once complete, announce the thinking
+  state when the wait begins, and give the character area a text description naming its current
+  emotional state.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -124,6 +150,8 @@ a distinct, visibly different state during the wait and leaves it when text begi
    the thinking state ends.
 3. **Given** a reply takes an unusually long time, **When** the visitor waits, **Then** the thinking
    state continues without the character freezing or the page appearing hung.
+4. **Given** no reply has arrived after 20 seconds, **When** the attempt is abandoned, **Then** the
+   thinking state ends, the character returns to idle, and the visitor is told they can send again.
 
 ---
 
@@ -135,24 +163,35 @@ a distinct, visibly different state during the wait and leaves it when text begi
   sees a short fallback message and the character stays neutral.
 - **Cue text appears mid-reply rather than at the end**: the displayed text is unaffected, and the
   character's reaction is driven only by a cue in the expected position.
-- **The provider is unreachable, errors, or times out**: the visitor sees a plain, actionable message
-  in the chat panel; no provider error text, status code, or diagnostic detail is shown; the
-  character returns to idle.
+- **The provider is unreachable, errors, or times out**: after at most 20 seconds the attempt is
+  abandoned with no automatic retry. The visitor sees a plain, actionable message inviting them to
+  send again; no provider error text, status code, or diagnostic detail is shown; the character leaves
+  the thinking state and returns to idle.
+- **Reply stalls after starting**: if text has begun arriving and then stops, the partial reply stays
+  visible and the visitor can send again; nothing already shown is retracted.
 - **Usage limit reached** (the visitor sends too many messages, or the shared free-tier allowance is
   exhausted): the visitor is told in plain language that the demo is temporarily limited and can
   retry later; the page does not break.
-- **Automated or abusive traffic**: excess requests are rejected before reaching the provider, so one
-  bot cannot exhaust the demo's allowance for everyone else.
-- **Extremely long visitor message**: input is capped, and the cap is visible before sending rather
-  than causing a failed send.
-- **Very long conversation in one visit**: the history sent onward is bounded, so replies keep
-  arriving and cost stays predictable, without the visitor seeing an abrupt failure.
+- **Automated or abusive traffic**: requests beyond the global daily ceiling are rejected before
+  reaching the provider, so the provider allowance and its cost stay bounded no matter how much
+  traffic arrives. Because the ceiling is global and no visitor is identified, sustained automated
+  traffic can consume the day's ceiling and put the demo into its temporary-limit state for everyone
+  until the next reset — an accepted tradeoff of having no visitor identity.
+- **Extremely long visitor message**: input stops at 300 characters, and the remaining allowance is
+  visible before sending rather than the send failing.
+- **Very long conversation in one visit**: only the 6 most recent messages travel onward, so replies
+  keep arriving and cost per request stays flat. The visitor sees no failure, but the character will
+  not recall turns older than that window — expected behaviour, not a defect.
 - **Visitor navigates away or reloads mid-reply**: the in-flight reply is abandoned cleanly and no
   further work is charged to the demo's allowance.
+- **Announcement collides with a new send**: if the visitor sends again immediately after a reply
+  completes, announcements MUST NOT interrupt each other or be lost — the later state wins and is
+  announced once.
 - **Narrow or short viewport**: character and chat panel both remain usable, neither cropped to the
   point of being unusable, and the page never scrolls sideways.
-- **Visitor prefers reduced motion**: idle drift and reaction animations are suppressed or reduced to
-  a still or minimal state, and the conversation still works.
+- **Visitor prefers reduced motion**: idle drift and reaction animations do not play; each emotional
+  state appears as its still expression, cross-faded in. The character never moves, yet still visibly
+  responds to what it said, and the conversation is unaffected.
 - **Rapid repeated sends**: only one turn is in flight at a time; duplicate turns are not created.
 
 ## Requirements *(mandatory)*
@@ -167,6 +206,15 @@ a distinct, visibly different state during the wait and leaves it when text begi
   MUST keep the newest message in view as content grows.
 - **FR-003**: The page MUST remain usable on a narrow viewport, with all controls reachable by
   keyboard and no sideways page scrolling.
+- **FR-036**: Reply text MUST be announced to assistive technology once, as a whole, when the reply is
+  complete — never progressively as it accumulates — so a screen-reader user hears one coherent reply
+  rather than fragments.
+- **FR-037**: Entering the thinking state MUST produce a brief non-interrupting announcement that a
+  reply is being prepared, and failures and limit messages MUST be announced by the same means, so no
+  visitor-facing state is visible-only.
+- **FR-038**: The character display MUST carry a text description that names the character and its
+  current emotional state in plain words, updated whenever the emotional state changes, so the
+  character's reaction is available to a visitor who cannot see the character display.
 - **FR-004**: Every visitor-facing message — errors, limits, waiting states — MUST be plain language
   the visitor can act on, and MUST NOT expose provider names, error codes, or diagnostic text.
 
@@ -194,8 +242,15 @@ a distinct, visibly different state during the wait and leaves it when text begi
   character cannot be displayed.
 - **FR-013**: Repeated mounting, unmounting, or resizing of the character display MUST NOT leave
   duplicate characters on screen, accumulate graphics resources, or degrade animation smoothness.
-- **FR-014**: When the visitor's platform signals a reduced-motion preference, animation MUST be
-  suppressed or reduced, while conversation remains fully functional.
+- **FR-014**: When the visitor's platform signals a reduced-motion preference, the character MUST
+  still convey emotional state but MUST NOT convey it through movement: idle drift and reaction
+  animations are suppressed, and each emotional state is shown as its still expression or pose,
+  reached by a brief cross-fade rather than a hard cut or a played animation. Conversation MUST remain
+  fully functional, and the emotion seam MUST be unchanged — the conversation layer still hands over
+  one emotional state and remains unaware that motion is suppressed.
+- **FR-035**: The reduced-motion preference MUST be honoured for the whole visit including page load,
+  so no motion plays before the preference is applied, and MUST take effect without the visitor
+  configuring anything in the page.
 
 **Conversation**
 
@@ -204,7 +259,9 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **FR-016**: Reply text MUST be displayed progressively as it arrives, not withheld until the reply
   is complete.
 - **FR-017**: Conversation history for the current visit MUST accompany each new message so replies
-  are aware of earlier turns, bounded by a documented cap on how much history travels onward.
+  are aware of earlier turns, bounded to the 6 most recent messages — visitor and character combined,
+  counted per the definition of a turn in Key Entities — with anything older dropped from what travels
+  onward while remaining visible in the log.
 - **FR-018**: The reply MUST carry a single emotional cue as plain text at an agreed position, and
   the conversation layer MUST strip that cue from the displayed text before the visitor can see it.
 - **FR-019**: A missing, malformed, or unrecognised cue MUST NOT prevent the reply text from being
@@ -214,7 +271,8 @@ a distinct, visibly different state during the wait and leaves it when text begi
   character MUST NOT reference messages, turns, or the provider.
 - **FR-021**: Exactly one turn MUST be in flight at a time; further sends MUST be prevented or queued
   while a reply is arriving, with the reason visible to the visitor.
-- **FR-022**: Visitor input MUST be length-capped, with the cap communicated before sending.
+- **FR-022**: Visitor input MUST be capped at 300 characters, with the cap visible before sending and
+  input beyond it prevented rather than silently truncated at send time.
 - **FR-023**: A failed, empty, or abandoned reply MUST leave the conversation in a state where the
   visitor can send another message without reloading the page.
 - **FR-024**: Conversation history MUST exist only for the duration of the visit and MUST NOT be
@@ -229,13 +287,19 @@ a distinct, visibly different state during the wait and leaves it when text begi
   replace, or read those instructions.
 - **FR-027**: The endpoint MUST stream the reply back to the browser as it arrives from the provider,
   without waiting for completion.
-- **FR-028**: The endpoint MUST enforce a request limit per visitor and MUST reject excess requests
-  before contacting the provider. The limit MUST hold across separate server invocations, not only
-  within one.
+- **FR-028**: The endpoint MUST enforce a single global ceiling of 150 requests shared by all
+  visitors, reset on a fixed daily period, and MUST reject requests beyond it before contacting the provider. The
+  count MUST hold across separate server invocations, not only within one. No per-visitor limit is
+  enforced and no visitor identifier — address, token, or fingerprint — is derived, transmitted, or
+  stored for limiting purposes.
 - **FR-029**: The endpoint MUST validate incoming request shape and reject anything malformed without
   contacting the provider.
 - **FR-030**: The endpoint MUST translate provider failures into a generic failure response and MUST
   NOT relay provider error text or credentials to the browser.
+- **FR-034**: A reply request MUST be abandoned after 20 seconds without completing, counted from
+  when the request reaches the endpoint. Abandonment MUST be treated as a failure per FR-030 and
+  MUST NOT be retried automatically — recovery is the visitor sending again. A request that has begun
+  streaming text MUST be allowed to finish streaming rather than being cut off at the 20-second mark.
 - **FR-031**: The endpoint MUST NOT log visitor message content or reply content by default.
 - **FR-032**: The provider, endpoint address, model identifier, and persona text MUST all be
   configurable without changing conversation or character behaviour.
@@ -266,6 +330,10 @@ a distinct, visibly different state during the wait and leaves it when text begi
 
 - **SC-001**: A first-time visitor can send a message and read a reply without instructions, on the
   first attempt, within 30 seconds of page load.
+- **SC-014**: A visitor using only a keyboard and a screen reader can complete a full exchange — send
+  a message, learn that a reply is coming, hear the complete reply once, and learn the character's
+  resulting mood — without encountering an unlabelled control or a fragmented, word-by-word
+  announcement.
 - **SC-002**: The character is visible and animating within 3 seconds of page load on a normal
   broadband connection.
 - **SC-003**: Character motion stays visibly smooth on the baseline target device — 60 frames per
@@ -281,17 +349,24 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **SC-007**: No cue markup, persona text, provider error text, or credential is visible to the
   visitor in any of those 20 turns.
 - **SC-008**: Reaction animations are distinguishable: an observer shown replies of differing tone
-  can tell the character's reactions apart in at least 4 of 5 pairs.
-- **SC-009**: Every failure path — assets missing, provider unreachable, limit reached, reply empty —
-  leaves the visitor with an actionable plain-language message and a page they can keep using without
-  reloading.
-- **SC-010**: An unattended flood of automated requests is rejected before reaching the provider and
-  does not exhaust the demo's allowance; a normal visitor arriving during the flood can still
-  converse.
+  can tell the character's reactions apart in at least 4 of 5 pairs. With reduced motion enabled the
+  same observer can still tell them apart in at least 4 of 5 pairs from the still expressions alone,
+  while no movement is observable anywhere on the page.
+- **SC-009**: Every failure path — assets missing, provider unreachable, limit reached, reply empty,
+  20-second timeout — leaves the visitor with an actionable plain-language message and a page they can
+  keep using without reloading. No failure leaves the character in the thinking state, and no single
+  visitor send ever consumes more than one request from the daily ceiling.
+- **SC-010**: An unattended flood of automated requests stops reaching the provider the moment the
+  global daily ceiling is hit, so provider usage for that day cannot exceed the ceiling regardless of
+  traffic volume. Every visitor turned away — bot or human — receives the plain-language
+  temporary-limit message rather than a broken page.
 - **SC-011**: A 30-minute session of 20 turns shows no duplicate characters, no degradation in
   animation smoothness, and no increase in reply latency attributable to the page.
 - **SC-012**: Replacing the character display with a still image, or switching the model provider,
   requires no change on the other side of the emotion seam — demonstrated by doing each once.
+- **SC-013**: With the caps in force, a single day's provider usage cannot exceed 150 requests, and
+  the text sent onward for any one request cannot exceed 300 characters of new input plus the 6 most
+  recent messages — verifiable by driving the endpoint past each cap and observing rejection.
 
 ## Assumptions
 
@@ -302,21 +377,29 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **Character rig**: a freely licensed sample character is used, licensed for non-commercial use,
   which is what this public portfolio demo is. Its animations and expressions are inventoried before
   the emotional state set is fixed, so the set is derived from the rig rather than chosen up front.
-- **Cost model**: inference runs on a free tier. Bounded history (FR-017), an input cap (FR-022), and
-  edge-enforced request limits (FR-028) exist to keep usage inside that allowance. A shared allowance
-  exhausted by other traffic is treated as a temporary-limit condition, not a defect.
+- **Cost model**: inference runs on a free tier. A 6-message history window (FR-017), a
+  300-character input cap (FR-022), and a 150-request daily ceiling (FR-028) exist to keep usage inside that allowance. A shared
+  allowance exhausted by other traffic — whether the provider's or this demo's own ceiling — is
+  treated as a temporary-limit condition, not a defect.
+- **No visitor identity**: the demo deliberately identifies no visitor at all, so fair-share limiting
+  between visitors is impossible by construction. A global ceiling was chosen over hashed-address
+  limiting to keep the privacy claim absolute: nothing derived from a visitor is ever stored, not even
+  a hash. The accepted cost is that one heavy or automated caller can consume the day's ceiling.
 - **Emotional cue format**: a short plain-text marker at the end of a reply, chosen over structured
   output because small free-tier models comply with it more reliably, and because its failure mode is
   a plain reply with a neutral character rather than nothing to display.
 - **No persistence, no identity**: no database, no accounts, no session storage. A visitor does not
   return to resume a conversation, so conversation history lives in browser memory only. This is also
-  why the request limit must be enforced outside server process memory.
+  why the global request ceiling must be counted outside server process memory.
 - **Single deployment**: the page and the inference endpoint ship as one deployable unit, so no
   cross-origin configuration is required.
 - **Content moderation** relies on the provider's own safeguards plus the persona instructions; no
   additional filtering layer is in scope.
 - **Reduced-motion handling** relies on the platform's existing preference signal; no in-page motion
   toggle is required.
+- **Assistive technology**: announcements target the screen readers commonly paired with the target
+  desktop browsers. The emotional state name exposed as text (FR-038) is the same closed set used
+  across the emotion seam, so it needs no separate vocabulary.
 - **Technology choices** (rendering library, framework, hosting, provider) are recorded in the
   implementation plan, not here. This specification is written so that either side of the emotion
   seam can be replaced without amending it.
