@@ -82,31 +82,15 @@ const config = [
         {
           patterns: [
             {
-              group: ['@/lib/character/*', '@/lib/server/*', '../character/*', '../server/*'],
-              message: `${seamMessage} lib/conversation does not know whether a canvas, a still image, or nothing at all is on the other side.`,
-            },
-          ],
-        },
-      ],
-    },
-  },
-
-  {
-    files: ['lib/server/**/*.{ts,tsx}'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
               group: [
-                '@/components/*',
                 '@/lib/character/*',
-                '@/lib/conversation/*',
-                '@/lib/ui/*',
-                '../../components/*',
+                '@/lib/server/*',
+                '../character/*',
+                '../server/*',
+                '@/app/api/*',
+                '../api/*',
               ],
-              message: `${seamMessage} lib/server is imported by nothing but the route handler, which is what keeps the persona text and the API key out of the client bundle.`,
+              message: `${seamMessage} lib/conversation does not know whether a canvas, a still image, or nothing at all is on the other side, and does not import from app/api.`,
             },
           ],
         },

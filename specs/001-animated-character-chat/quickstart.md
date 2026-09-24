@@ -12,10 +12,9 @@ Implementation detail lives in `tasks.md`; this file is the setup and validation
 | Need | Why |
 |------|-----|
 | Node 20+ and npm | Next.js toolchain |
-| A Groq API key (free tier, no card) | Inference (D5) |
 | The official Cubism SDK for Web download | Source of `live2dcubismcore.min.js`, which is not on npm (D2) |
 | A Cubism 4 sample model with expression files | The rig (D4, [contracts/rig-inventory.md](./contracts/rig-inventory.md)) |
-| A Vercel account with the Upstash Redis integration | The daily counter (D7). Optional locally - see below |
+| The external FastAPI backend running (D15) | Thread creation and chat. See the backend project's own setup guide |
 
 ## Setup
 
@@ -24,15 +23,14 @@ npm install
 cp .env.example .env.local
 ```
 
+Tailwind CSS v4 and `@tailwindcss/postcss` are already in `devDependencies` (D13). The PostCSS
+config at `postcss.config.mjs` is checked in. No additional Tailwind setup is needed.
+
 Fill `.env.local`:
 
 ```ini
-GROQ_API_KEY=gsk_...
-GROQ_BASE_URL=https://api.groq.com/openai/v1
-GROQ_MODEL=<confirmed against Groq's live model list>
-DAILY_REQUEST_LIMIT=150
-KV_REST_API_URL=<from the Vercel integration>
-KV_REST_API_TOKEN=<from the Vercel integration>
+# Backend base URL (D15, FR-032). Defaults to http://127.0.0.1:8000 if omitted.
+NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
 ```
 
 Vendor the two assets that are not npm packages:
@@ -49,15 +47,12 @@ Then run:
 npm run dev          # http://localhost:3000
 ```
 
-**Without the counter store**: the quota check fails closed by design (D7), so every send returns the
-temporary-limit message. That is correct behaviour, not a bug.
+**Without the backend running**: thread creation fails on page load, sending is disabled, and a
+connection notice is shown (FR-045). The character and its idle animation are unaffected. Start the
+FastAPI backend to enable chat.
 
-To develop the conversation path without provisioning the store, run against the scripted-provider
-fixture (`tests/fixtures/provider.ts`, task T007a), which stands in for both the provider and the
-counter. Do not reach for `DAILY_REQUEST_LIMIT=0` - a limit of zero refuses every request, which is
-the opposite of what it looks like it does. There is no "unlimited" value and there should not be
-one: an env value that switches off the ceiling in production is exactly the footgun FR-028 exists to
-prevent.
+To develop the conversation path without the real backend, run against the scripted-backend
+fixture (`tests/fixtures/backend.ts`), which mocks both `/threads` and `/chat` responses.
 
 ## Commands
 
@@ -98,7 +93,7 @@ SC-003 is a recorded measurement on the baseline device, attached to the PR, not
 4. Send a follow-up that refers to the first exchange; the reply shows awareness of it.
 5. Reload: the log is empty.
 
-**Proves**: FR-015, FR-016, FR-017, FR-024, SC-004, SC-005.
+**Proves**: FR-015, FR-016, FR-017, FR-043, FR-024, SC-004, SC-005.
 
 ### V3. The cue is never visible - the highest-value check
 
@@ -141,15 +136,14 @@ and the character sits at neutral. Nothing throws.
 
 | Fixture | Expected |
 |---------|----------|
-| Provider returns 500 | 502 to browser, plain message, character returns to idle, no provider text shown |
-| Provider never responds | 504 at ~20s, one provider request only, visitor invited to resend |
-| Stream starts then stalls | Partial text stays, no 504, sendable again |
-| Counter at 150 | 429, temporary-limit message, provider never contacted |
-| Counter store unreachable | 429, not 200 |
+| Backend `/chat` returns 500 | 502-equivalent to browser, plain message, character returns to idle, no provider text shown |
+| Backend `/chat` never responds | Timeout, one request only, visitor invited to resend |
+| Stream starts then stalls | Partial text stays, sendable again |
+| Backend returns 429 | Temporary-limit message, character returns to idle |
+| Backend `/threads` unreachable on page load | Connection notice shown, sending disabled (FR-045) |
 | Broken `modelUrl` | Still image shown, chat fully usable |
-| 400-triggering request bodies (7 entries, 301 chars, no messages, bad JSON) | 400, provider never contacted |
 
-**Proves**: FR-012, FR-023, FR-028, FR-029, FR-030, FR-034, SC-009, SC-013.
+**Proves**: FR-012, FR-023, FR-028, FR-030, FR-034, FR-045, SC-009.
 
 ### V8. Reduced motion
 
@@ -174,9 +168,9 @@ and the character sits at neutral. Nothing throws.
 | Swap | Check |
 |------|-------|
 | Disable the renderer, use the still image | Every conversation test in V2 to V7 passes unchanged |
-| Point `GROQ_BASE_URL`/`GROQ_MODEL`/`GROQ_API_KEY` at OpenRouter | A full turn works with zero source edits |
+| Point `NEXT_PUBLIC_BACKEND_URL` at a different backend instance | A full turn works with zero source edits |
 
-**Proves**: FR-012, FR-020, FR-032, SC-012.
+**Proves**: FR-012, FR-020, FR-032, FR-047, SC-012.
 
 ### V11. Endurance
 
@@ -191,11 +185,11 @@ counts flat, no growth in reply-handling latency, animation still smooth.
 
 - [x] Constitution amended for the TypeScript stack - done 2026-08-31, v1.1.0 (see Constitution Check
       in [plan.md](./plan.md))
-- [ ] SC-006 cue-compliance rate measured against the real provider over 20 turns and recorded (T074)
+- [ ] SC-006 cue-compliance rate measured against the real backend over 20 turns and recorded (T074)
       - fixtures supply the cue themselves, so the suite cannot prove this one
-- [ ] `GROQ_API_KEY` set in Vercel project settings only; absent from the repo and from any client
-      bundle - verify by grepping the built `.next/static` output
-- [ ] Upstash integration provisioned; a live request increments the daily key
+- [ ] `NEXT_PUBLIC_BACKEND_URL` set correctly for the production backend
+- [ ] External FastAPI backend deployed and accessible from the frontend's domain
+- [ ] CORS configured on the backend to allow the frontend's origin
 - [ ] Rig license file vendored and attribution visible on the page
 - [ ] `npm run build`, `npm run lint`, `npm test`, `npm run test:e2e` all green
 - [ ] 60fps measurement recorded on the baseline device and attached to the PR (constitution IV)

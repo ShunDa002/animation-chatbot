@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NEUTRAL, type Emotion } from '@/lib/emotion';
 import { createCueReader } from '@/lib/conversation/cue';
-import { isSendable, outboundHistory, type Message } from '@/lib/conversation/limits';
+import { isSendable, type Message } from '@/lib/conversation/limits';
+import { createThread, sendMessage } from '@/lib/conversation/backend';
 import { copy } from '@/lib/ui/copy';
 
 /**
@@ -18,11 +19,19 @@ import { copy } from '@/lib/ui/copy';
  * store on the device or the server (FR-024).
  */
 
-export type ConversationStatus = 'idle' | 'waiting' | 'streaming' | 'error' | 'limited';
+export type ConversationStatus =
+  | 'connecting'
+  | 'idle'
+  | 'waiting'
+  | 'streaming'
+  | 'error'
+  | 'limited';
 
 export interface Conversation {
   messages: Message[];
   status: ConversationStatus;
+  /** UUID assigned by POST /threads on page load (FR-043). Null until thread is ready. */
+  threadId: string | null;
   /** The last value handed across the seam. */
   emotion: Emotion;
   /** True from send until the reply completes, fails, or times out (FR-021). */
@@ -62,7 +71,9 @@ function noticeForStatus(status: number): { notice: string; status: Conversation
 
 export function useConversation(): Conversation {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [status, setStatus] = useState<ConversationStatus>('idle');
+  const [status, setStatus] = useState<ConversationStatus>('connecting');
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const threadIdRef = useRef<string | null>(null);
   const [emotion, setEmotion] = useState<Emotion>(NEUTRAL);
   const [notice, setNotice] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
@@ -84,6 +95,35 @@ export function useConversation(): Conversation {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Request a thread from the backend on mount (FR-043).
+  // If thread creation fails, set status to 'error', show backendUnavailable notice,
+  // and leave threadId as null (FR-045).
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const id = await createThread();
+        if (!cancelled) {
+          threadIdRef.current = id;
+          setThreadId(id);
+          setStatus('idle');
+        }
+      } catch {
+        if (!cancelled) {
+          threadIdRef.current = null;
+          setThreadId(null);
+          setStatus('error');
+          setNotice(copy.backendUnavailable);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // A visitor who navigates away or reloads mid-reply abandons the request cleanly, so no further
   // work is charged to the demo's allowance (spec Edge Cases).
@@ -122,6 +162,13 @@ export function useConversation(): Conversation {
     (draft: string) => {
       if (!isSendable(draft)) return;
 
+      const currentThreadId = threadIdRef.current;
+      // Refuse to send if thread creation hasn't completed or failed (FR-045).
+      if (!currentThreadId) {
+        setNotice(copy.backendUnavailable);
+        return;
+      }
+
       // Refused rather than queued, with the reason visible (FR-021).
       if (inFlightRef.current) {
         setNotice(copy.replyInProgress);
@@ -145,18 +192,12 @@ export function useConversation(): Conversation {
       setStatus('waiting');
       setNotice(null);
 
-      const history = outboundHistory([...messagesRef.current, visitorMessage]);
       const controller = new AbortController();
       abortRef.current = controller;
 
       void (async () => {
         try {
-          const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ messages: history }),
-            signal: controller.signal,
-          });
+          const response = await sendMessage(currentThreadId, text, controller.signal);
 
           if (!response.ok || !response.body) {
             const mapped = noticeForStatus(response.status);
@@ -243,8 +284,13 @@ export function useConversation(): Conversation {
             stalledRef.current = false;
             const partial = messagesRef.current.find((message) => message.id === replyId);
             if (partial && partial.text.trim().length > 0) {
-              completeReply(replyId, partial.text, NEUTRAL);
-              setNotice(copy.failedStalled);
+              setMessages((current) =>
+                current.map((message) =>
+                  message.id === replyId ? { ...message, status: 'complete' } : message,
+                ),
+              );
+              setEmotion(NEUTRAL);
+              finish('error', copy.failedStalled);
               return;
             }
             finish('error', copy.failedTimeout);
@@ -267,6 +313,7 @@ export function useConversation(): Conversation {
   return {
     messages,
     status,
+    threadId,
     emotion,
     inFlight,
     notice,

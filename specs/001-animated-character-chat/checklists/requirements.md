@@ -46,4 +46,5 @@
 - Re-validated 2026-08-31 on a second `/speckit-specify` pass with a restated description. The
   restatement carried no new behaviour, so only the Input block was resynced; all requirements,
   scenarios, and criteria were re-checked and still pass. No duplicate feature directory created.
+- Re-validated 2026-09-24 for the visual fidelity refinement pass (D16): top-to-bottom transparent-to-dark gradient, unblurred character silhouette, and high-contrast typography across FR-001 and FR-002.
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.

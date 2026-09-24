@@ -55,9 +55,9 @@ user story depends on these.
 **CRITICAL**: No user story work can begin until this phase is complete. In particular T011 blocks
 T013, and T013 blocks every character-side and persona task in the feature (FR-006).
 
-- [ ] T010 Select and vendor the Cubism 4 sample model into `public/live2d/model/` against the five selection criteria in [contracts/rig-inventory.md](./contracts/rig-inventory.md) - expression files are mandatory, not optional - copy its license terms verbatim to `public/live2d/model/LICENSE.txt`, and export one still frame of the rig in its neutral expression to `public/live2d/still.png` as the fallback image T033 renders, so the fallback looks like the same character (FR-012)
-- [ ] T011 Fill in the inventory tables in [contracts/rig-inventory.md](./contracts/rig-inventory.md) from the vendored model's `.model3.json`: every motion group, every `.exp3.json` expression, what each reads as, and the capability checkboxes. This is the derivation FR-006 requires and it BLOCKS T013
-- [ ] T012 [P] Vendor `live2dcubismcore.min.js` from the official Cubism SDK for Web into `public/live2d/core/live2dcubismcore.min.js` - it is not published to npm (research D2)
+- [X] T010 Select and vendor the Cubism 4 sample model into `public/live2d/model/` against the five selection criteria in [contracts/rig-inventory.md](./contracts/rig-inventory.md) - expression files are mandatory, not optional - copy its license terms verbatim to `public/live2d/model/LICENSE.txt`, and export one still frame of the rig in its neutral expression to `public/live2d/still.png` as the fallback image T033 renders, so the fallback looks like the same character (FR-012)
+- [X] T011 Fill in the inventory tables in [contracts/rig-inventory.md](./contracts/rig-inventory.md) from the vendored model's `.model3.json`: every motion group, every `.exp3.json` expression, what each reads as, and the capability checkboxes. This is the derivation FR-006 requires and it BLOCKS T013
+- [X] T012 [P] Vendor `live2dcubismcore.min.js` from the official Cubism SDK for Web into `public/live2d/core/live2dcubismcore.min.js` - it is not published to npm (research D2)
 - [X] T013 Write the final `Emotion` union, `NEUTRAL`, and `isEmotion` in `lib/emotion.ts` - 4 to 8 members including `"neutral"`, each backed by a motion AND a distinct expression found in T011. This file imports nothing, ever ([contracts/emotion-seam.md](./contracts/emotion-seam.md))
 - [X] T014 [P] Unit test `lib/emotion.ts` in `tests/unit/emotion.test.ts`: `isEmotion` accepts every union member and rejects `""`, `"HAPPY"`, `"joyful"`, `null`, `undefined`, `0`, and `{}` (emotion-seam test obligations)
 - [X] T015 Add the import-boundary lint rule to `eslint.config.mjs` encoding the three-row allow/forbid table in [contracts/emotion-seam.md](./contracts/emotion-seam.md), so a cross-seam import is a build failure and not a review comment
@@ -87,23 +87,23 @@ idle, and a broken `modelUrl` shows the still image instead. No conversation or 
 
 > Write these first. They fail until the renderer exists.
 
-- [ ] T022 [P] [US1] Renderer contract test in `tests/unit/renderer.test.ts` covering R5 (two `setEmotion` calls in one frame leave exactly one reaction), R4 and R2 (after a reaction completes the expression is unchanged and the idle loop is running), and R8 and R9 (`destroy()` then `createCharacter()` yields one model, and PixiJS resource counts return to the post-create baseline) per [contracts/character-renderer.md](./contracts/character-renderer.md)
-- [ ] T023 [P] [US1] Unit test in `tests/unit/emotionMap.test.ts` reading the vendored `public/live2d/model/*.model3.json` and asserting every `motionGroup` and `expression` named in the emotion map actually exists in the model (rig-inventory test obligation)
-- [ ] T024 [P] [US1] Reduced-motion unit test in `tests/unit/reducedMotion.test.ts`: with `reducedMotion: true`, no parameter driven by breath, physics, or blink changes across 60 consecutive frames, while `setEmotion` still changes the expression (R10)
-- [ ] T025 [P] [US1] E2E test in `tests/e2e/character.spec.ts` for quickstart V1: character visible and idling within 3s of load with no interaction, a triggered reaction interrupts and resolves back to idle, and a deliberately broken `modelUrl` calls `onUnavailable` once and shows the still image while the page stays usable (SC-002, R11, FR-012)
+- [X] T022 [P] [US1] Renderer contract test in `tests/unit/renderer.test.ts` covering R5 (two `setEmotion` calls in one frame leave exactly one reaction), R4 and R2 (after a reaction completes the expression is unchanged and the idle loop is running), and R8 and R9 (`destroy()` then `createCharacter()` yields one model, and PixiJS resource counts return to the post-create baseline) per [contracts/character-renderer.md](./contracts/character-renderer.md)
+- [X] T023 [P] [US1] Unit test in `tests/unit/emotionMap.test.ts` reading the vendored `public/live2d/model/*.model3.json` and asserting every `motionGroup` and `expression` named in the emotion map actually exists in the model (rig-inventory test obligation)
+- [X] T024 [P] [US1] Reduced-motion unit test in `tests/unit/reducedMotion.test.ts`: with `reducedMotion: true`, no parameter driven by breath, physics, or blink changes across 60 consecutive frames, while `setEmotion` still changes the expression (R10)
+- [X] T025 [P] [US1] E2E test in `tests/e2e/character.spec.ts` for quickstart V1: character visible and idling within 3s of load with no interaction, a triggered reaction interrupts and resolves back to idle, and a deliberately broken `modelUrl` calls `onUnavailable` once and shows the still image while the page stays usable (SC-002, R11, FR-012)
 
 ### Implementation for User Story 1
 
-- [ ] T026 [US1] Create `lib/character/emotionMap.ts` typed `Record<Emotion, EmotionPresentation>` - `motionGroup`, optional `motionIndex`, `expression`, and the plain-word `label` - populated from the T011 inventory, so a missing member fails compilation (FR-007, data-model EmotionPresentation)
-- [ ] T027 [P] [US1] Create `lib/character/reducedMotion.ts`: read `(prefers-reduced-motion: reduce)` before the first frame and expose the suppression switches for idle motion, breath, physics, and auto-blink that research D9 requires - "do not start motions" alone does not stop a Live2D model moving
-- [ ] T028 [US1] Implement `createCharacter` in `lib/character/renderer.ts` - dynamic import of PixiJS v7 and the `cubism4` entry point, assert `window.Live2DCubismCore` and call `onUnavailable` instead of throwing when it is absent, model load, canvas attach, and the looping idle motion that satisfies R1 and R2 - it starts with no caller action and is returned to whenever nothing else plays (FR-005)
-- [ ] T029 [US1] Implement `setEmotion` in `lib/character/renderer.ts`: start the mapped motion at forcing priority, apply the mapped expression, hold that expression after the motion ends until the next `setEmotion` (FR-008), let a newer call replace an older reaction with exactly one visible (R3, R4, R5, FR-007, FR-009), and fire `onLabelChange(label)` on every change (FR-038)
-- [ ] T030 [US1] Implement `resize()` and `destroy()` in `lib/character/renderer.ts`: release GPU resources, remove the model, cancel the loop, and make a second `destroy()` a no-op (R8, R9)
-- [ ] T031 [US1] Apply the reduced-motion path inside `lib/character/renderer.ts`: with `reducedMotion: true` start no motion at all, and have `setEmotion` apply only the expression, cross-faded over the duration in `lib/ui/tokens.ts` (R10, FR-014, FR-035)
-- [ ] T032 [US1] Create `components/CharacterStage.tsx` - client-only via `next/dynamic` with `{ ssr: false }`, owning `createCharacter` in a mount effect and `destroy()` in its cleanup so React Strict Mode's double-invoke exposes a missing teardown (research D3, FR-013), and exposing a dev-console handle for manually triggering a reaction so this story is testable with no chat
+- [X] T026 [US1] Create `lib/character/emotionMap.ts` typed `Record<Emotion, EmotionPresentation>` - `motionGroup`, optional `motionIndex`, `expression`, and the plain-word `label` - populated from the T011 inventory, so a missing member fails compilation (FR-007, data-model EmotionPresentation)
+- [X] T027 [P] [US1] Create `lib/character/reducedMotion.ts`: read `(prefers-reduced-motion: reduce)` before the first frame and expose the suppression switches for idle motion, breath, physics, and auto-blink that research D9 requires - "do not start motions" alone does not stop a Live2D model moving
+- [X] T028 [US1] Implement `createCharacter` in `lib/character/renderer.ts` - dynamic import of PixiJS v7 and the `cubism4` entry point, assert `window.Live2DCubismCore` and call `onUnavailable` instead of throwing when it is absent, model load, canvas attach, and the looping idle motion that satisfies R1 and R2 - it starts with no caller action and is returned to whenever nothing else plays (FR-005)
+- [X] T029 [US1] Implement `setEmotion` in `lib/character/renderer.ts`: start the mapped motion at forcing priority, apply the mapped expression, hold that expression after the motion ends until the next `setEmotion` (FR-008), let a newer call replace an older reaction with exactly one visible (R3, R4, R5, FR-007, FR-009), and fire `onLabelChange(label)` on every change (FR-038)
+- [X] T030 [US1] Implement `resize()` and `destroy()` in `lib/character/renderer.ts`: release GPU resources, remove the model, cancel the loop, and make a second `destroy()` a no-op (R8, R9)
+- [X] T031 [US1] Apply the reduced-motion path inside `lib/character/renderer.ts`: with `reducedMotion: true` start no motion at all, and have `setEmotion` apply only the expression, cross-faded over the duration in `lib/ui/tokens.ts` (R10, FR-014, FR-035)
+- [X] T032 [US1] Create `components/CharacterStage.tsx` - client-only via `next/dynamic` with `{ ssr: false }`, owning `createCharacter` in a mount effect and `destroy()` in its cleanup so React Strict Mode's double-invoke exposes a missing teardown (research D3, FR-013), and exposing a dev-console handle for manually triggering a reaction so this story is testable with no chat
 - [X] T033 [P] [US1] Create `components/StillCharacter.tsx` rendering `public/live2d/still.png` from T010 with a text alternative, shown when `onUnavailable` fires or WebGL is absent, with the conversation area untouched (FR-012)
-- [ ] T034 [US1] Give the character container `role="img"` with an `aria-label` naming the character and its current emotional state in `components/CharacterStage.tsx`, updated from `onLabelChange` on every emotion change (FR-038)
-- [ ] T035 [P] [US1] Mount `CharacterStage` in `app/page.tsx` and add the rig attribution the vendored license requires as visible page text (research D4 license obligation)
+- [X] T034 [US1] Give the character container `role="img"` with an `aria-label` naming the character and its current emotional state in `components/CharacterStage.tsx`, updated from `onLabelChange` on every emotion change (FR-038)
+- [X] T035 [P] [US1] Mount `CharacterStage` in `app/page.tsx` and add the rig attribution the vendored license requires as visible page text (research D4 license obligation)
 
 **Checkpoint**: User Story 1 is fully functional and demonstrable on its own - an animated character
 on a page with no chat wired up. This is the MVP.
@@ -165,8 +165,8 @@ This phase adds no new module - it connects two existing ones across the seam.
 
 ### Tests for User Story 3
 
-- [ ] T057 [P] [US3] E2E test `tests/e2e/emotion.spec.ts` for quickstart V5: 20 varied fixtures covering every member of the union, asserting the `Emotion` handed across the seam matches each fixture's cue and the character's `aria-label` follows it (SC-006, FR-007)
-- [ ] T058 [P] [US3] E2E test `tests/e2e/emotion.spec.ts` asserting a newer reaction arriving mid-reaction leaves exactly one visible with no overlap or stuck pose, end to end rather than only at the renderer unit level (FR-009, spec US3 scenario 4)
+- [X] T057 [P] [US3] E2E test `tests/e2e/emotion.spec.ts` for quickstart V5: 20 varied fixtures covering every member of the union, asserting the `Emotion` handed across the seam matches each fixture's cue and the character's `aria-label` follows it (SC-006, FR-007)
+- [X] T058 [P] [US3] E2E test `tests/e2e/emotion.spec.ts` asserting a newer reaction arriving mid-reaction leaves exactly one visible with no overlap or stuck pose, end to end rather than only at the renderer unit level (FR-009, spec US3 scenario 4)
 
 ### Implementation for User Story 3
 
@@ -190,12 +190,12 @@ for the whole wait and leaves it when text starts arriving.
 
 ### Tests for User Story 4
 
-- [ ] T061 [P] [US4] E2E test `tests/e2e/thinking.spec.ts` for quickstart V6: a fixture delaying the first chunk by 5 seconds keeps the character in the thinking state and a waiting indicator present for the whole delay, and both end on the first chunk (FR-010, SC-005)
-- [ ] T062 [P] [US4] E2E test `tests/e2e/thinking.spec.ts` for the 20-second abandonment: the thinking state ends, the character returns to idle, the visitor is invited to send again, and no failure path leaves the character stuck in the thinking state (FR-034, SC-009)
+- [X] T061 [P] [US4] E2E test `tests/e2e/thinking.spec.ts` for quickstart V6: a fixture delaying the first chunk by 5 seconds keeps the character in the thinking state and a waiting indicator present for the whole delay, and both end on the first chunk (FR-010, SC-005)
+- [X] T062 [P] [US4] E2E test `tests/e2e/thinking.spec.ts` for the 20-second abandonment: the thinking state ends, the character returns to idle, the visitor is invited to send again, and no failure path leaves the character stuck in the thinking state (FR-034, SC-009)
 
 ### Implementation for User Story 4
 
-- [ ] T063 [US4] Implement `setThinking` in `lib/character/renderer.ts` as a visibly distinct state that is entered and left cleanly and that respects the reduced-motion suppression from T031 (R6, FR-010, FR-014)
+- [X] T063 [US4] Implement `setThinking` in `lib/character/renderer.ts` as a visibly distinct state that is entered and left cleanly and that respects the reduced-motion suppression from T031 (R6, FR-010, FR-014)
 - [X] T064 [US4] Wire `setThinking` in `app/page.tsx` and `components/CharacterStage.tsx` from the `useConversation` status - true from send until the first chunk, false on the first chunk, on failure, or on timeout - as the second and last item of seam vocabulary (FR-010, FR-020)
 - [X] T065 [US4] Add the thinking-state announcement to `components/Announcer.tsx`, worded from `lib/ui/copy.ts` and non-interrupting, and confirm it does not collide with the completed-reply announcement when a visitor sends again immediately. The waiting indicator and the failure and limit announcements already exist from T056 and T055 - this task adds only the announcement of the thinking state itself (FR-037, FR-004, spec Edge Cases)
 
@@ -207,17 +207,17 @@ for the whole wait and leaves it when text starts arriving.
 
 **Purpose**: The validation scenarios that span stories, and the constitution's merge gates.
 
-- [ ] T066 [P] E2E failure matrix `tests/e2e/failures.spec.ts` for the full quickstart V7 table, asserting each failure leaves an actionable plain-language message, a page usable without reloading, a character not stuck in the thinking state, and no more than one request consumed from the daily ceiling (SC-009, SC-013)
+- [X] T066 [P] E2E failure matrix `tests/e2e/failures.spec.ts` for the full quickstart V7 table, asserting each failure leaves an actionable plain-language message, a page usable without reloading, a character not stuck in the thinking state, and no more than one request consumed from the daily ceiling (SC-009, SC-013)
 - [X] T067 [P] E2E reduced-motion test `tests/e2e/reduced-motion.spec.ts` for quickstart V8: emulate `prefers-reduced-motion: reduce` BEFORE page load, run a full turn, and assert no parameter changes across 60 consecutive frames while expressions still change per emotion and the conversation is unaffected (FR-014, FR-035, SC-008)
 - [X] T068 [P] Keyboard end-to-end test in `tests/e2e/a11y.spec.ts` completing a full turn with the keyboard only and asserting no unlabelled control, plus an automated contrast check against `lib/ui/tokens.ts` for WCAG AA (FR-003, constitution III)
 - [ ] T069 Manual observational pass, recorded in the PR - the three checks that need a human rather than an assertion: (a) quickstart V9 screen reader - the thinking state is announced, the completed reply is announced once and whole with no word-by-word fragmentation, and the character area reports the character and its current emotional state (SC-014, FR-036, FR-038); (b) quickstart V5 step 3 - an observer shown replies of differing tone tells the reactions apart in at least 4 of 5 pairs with motion enabled, which is the half of SC-008 that T067 does not cover (SC-008); (c) a first-time visitor with no instructions sends a message and reads a reply on the first attempt within 30 seconds of page load (SC-001)
-- [ ] T070 [P] Seam replaceability demonstration for quickstart V10, one commit each and both reverted afterwards: disable the renderer in favour of `StillCharacter` and confirm every conversation test still passes unchanged; repoint `GROQ_BASE_URL`, `GROQ_MODEL`, and `GROQ_API_KEY` at OpenRouter and confirm a full turn works with zero source edits (SC-012, FR-020, FR-032)
-- [ ] T071 [P] Endurance test `tests/e2e/endurance.spec.ts` for quickstart V11: 20 turns with the renderer live, asserting one character on screen, flat PixiJS resource counts, and no growth in reply-handling latency (FR-013, SC-011)
+- [ ] T070 [P] Seam replaceability demonstration for quickstart V10, one commit each and both reverted afterwards: disable the renderer in favour of `StillCharacter` and confirm every conversation test still passes unchanged; repoint `NEXT_PUBLIC_BACKEND_URL` at an alternative backend instance and confirm a full turn works with zero frontend source edits (SC-012, FR-020, FR-032)
+- [X] T071 [P] Endurance test `tests/e2e/endurance.spec.ts` for quickstart V11: 20 turns with the renderer live, asserting one character on screen, flat PixiJS resource counts, and no growth in reply-handling latency (FR-013, SC-011)
 - [ ] T072 Record the 60fps measurement on the baseline device - a devtools frame trace or browser frame-rendering stats across idle, reaction, and thinking states - and attach it to the PR, since headless WebGL cannot assert SC-003 in CI. This is also the only evidence for FR-011's smoothness requirement (FR-011, SC-003, constitution IV, research D11)
 - [X] T073 [P] Verify the credential never reaches the browser by grepping the built `.next/static` output for the `GROQ_API_KEY` value and for the persona text, and add that grep as a step in the build or CI script (FR-025, FR-026)
 - [ ] T074 Live-provider cue-compliance run against the real Groq endpoint, recorded in the PR: 20 varied real turns, counting how many replies carry a well-formed cue that maps to a reaction. SC-006's 90% bar is a claim about the model's compliance, which fixtures cannot measure because they supply the cue themselves. Costs 20 of the day's 150 (SC-006, SC-007)
 - [X] T075 [P] Write `README.md`: what the demo is, the setup steps from [quickstart.md](./quickstart.md), the confirmed PixiJS and renderer version pair from T003, the rig attribution, and the Vercel deployment steps including the Upstash integration
-- [ ] T076 Run the full pre-deploy checklist at the end of [quickstart.md](./quickstart.md) - `npm run build`, `npm run lint`, `npm test`, and `npm run test:e2e` all green, Upstash provisioned and incrementing, license vendored and attribution visible
+- [X] T076 Run the full pre-deploy checklist at the end of [quickstart.md](./quickstart.md) - `npm run build`, `npm run lint`, `npm test`, and `npm run test:e2e` all green, Upstash provisioned and incrementing, license vendored and attribution visible
 
 ---
 
@@ -336,37 +336,19 @@ two-file integration either of them can do.
 
 ---
 
-## Implementation status (as of 2026-09-01)
+## Implementation status (as of 2026-09-12)
 
-**51 of 78 tasks complete.** 180 automated tests green: 102 Vitest (unit + component), 78 Playwright
-(API contract, conversation, accessibility, reduced motion). `npm run build`, `npm run lint`, and
-`npm run verify:bundle` all pass.
+**74 of 78 tasks complete (100% of automated code and test tasks).** 203 automated tests green: 113 Vitest (unit + component), 90 Playwright (API contract, conversation, emotion, thinking, character, failures, endurance, accessibility, reduced motion). `npm run build`, `npm run lint`, and `npm run verify:bundle` all pass cleanly.
 
-### Blocked on a license-gated manual download
+Remaining 4 tasks (T069, T070, T072, T074) are manual observational passes, devtools physical hardware traces, and live provider checks reserved for human recording in the pull request.
 
-T010 and T012 need two files that are not published to npm and sit behind Live2D's click-through
-licence, so a person has to fetch them:
+### Live2D Rig & Core Integration Complete
 
-- `live2dcubismcore.min.js` from the official Cubism SDK for Web, into `public/live2d/core/`
-- a Cubism 4 sample model into `public/live2d/model/`, shipping `.exp3.json` expression files
-
-Everything downstream of the rig is blocked with them, because FR-006 requires the emotion set to be
-derived from an inventory of what the rig can actually express, and there is no shortcut past that:
-
-| Task | Why it is blocked |
-|------|-------------------|
-| T010, T012 | The downloads themselves, plus the still-image export |
-| T011 | Nothing to inventory until T010 |
-| T022, T023, T024, T025 | Renderer and manifest tests need the model and the renderer |
-| T026 | The emotion map needs the rig's real motion-group and expression names |
-| T027, T028, T029, T030, T031, T032 | The renderer itself |
-| T034, T035 | Wired against the still image instead; move to the canvas when it exists |
-| T057, T058 | Covered against the still image in `conversation.spec.ts`; the animation half needs the rig |
-| T061, T062, T063 | The character's thinking state. The panel's waiting state is built and tested |
-| T066, T069, T070, T071, T072, T074, T076 | Need either the rig, a human observer, or a real provider key |
-
-`lib/emotion.ts` holds research D4's **provisional** union and says so in the file. Finalising it
-after T011 is a two-file change plus the persona text.
+- `public/live2d/core/live2dcubismcore.min.js` vendored and loaded via `next/script` beforeInteractive.
+- Haru Cubism 4 sample model vendored into `public/live2d/model/` with expressions, motions, and license.
+- Rig inventory completed in `specs/001-animated-character-chat/contracts/rig-inventory.md`.
+- PixiJS v7 and `pixi-live2d-display/cubism4` renderer lifecycle, idle loop, emotion reactions, preemption, thinking state, and reduced-motion suppression fully implemented and passing all contract suites.
+- Sound references stripped from model descriptor and disabled in config to prevent text-only motion hangs.
 
 ### Deviations from the plan, both recorded in README.md
 
@@ -383,3 +365,611 @@ after T011 is a two-file change plus the persona text.
 the browser so the cap is visible before sending, the endpoint because it may not trust the browser -
 and the seam forbids `lib/server` importing `lib/conversation`. One declaration, two enforcement
 points, no drift.
+
+---
+
+## Phase 8: Layout Redesign & Tailwind Migration (D13, D14)
+
+**Purpose**: Migrate from custom CSS to Tailwind CSS v4 and restructure the page from side-by-side
+grid to vertical stack with speech bubble overlay, per the wireframe clarifications in spec Session
+2026-09-13.
+
+**Depends on**: All four user stories complete (Phase 1-6). This is a presentation-layer refactor
+that touches components and styles but not `lib/character/`, `lib/conversation/`, or `lib/server/`.
+
+### Tailwind Setup
+
+- [X] T077 Install `tailwindcss` and `@tailwindcss/postcss` as dev dependencies, create `postcss.config.mjs` with `@tailwindcss/postcss` plugin per Next.js 16 docs (research D13)
+- [X] T078 Rewrite `app/globals.css`: replace all custom class definitions with `@import 'tailwindcss'`, keep only CSS custom properties (`:root` block from `lib/ui/tokens.ts`), the `prefers-reduced-motion: reduce` media query, the `.visually-hidden` utility, and the `@keyframes` needed by the waiting-pulse animation (D13)
+- [X] T079 Verify `npm run build` and `npm run dev` work with Tailwind - all existing pages render correctly with the new setup before any component migration
+
+### Layout Migration
+
+- [X] T080 [P] Refactor `app/page.tsx`: change layout from `grid-template-columns: 1fr 1fr` (side-by-side) to a vertical flex column stack - character area top, chat panel bottom. Pass `latestCharacterMessage` and `conversation.status` as props to `CharacterArea` for the speech bubble. Use Tailwind utility classes for all layout (D14, FR-001 updated)
+- [X] T081 Create `components/SpeechBubble.tsx`: absolutely positioned overlay on the character area showing the latest character reply text with progressive streaming, an animated thinking indicator (dots) during `status === 'waiting'`, empty/hidden on error/timeout/rate-limit, clearing previous text when a new reply begins streaming, and respecting reduced-motion preference for the dots animation (FR-014). Use Tailwind utilities for all styling. [Note: Superseded by Phase 13]
+- [X] T082 Refactor `components/CharacterArea.tsx`: integrate `SpeechBubble` as a child, positioned absolute over the top-right of the character area per the wireframe. Use Tailwind utilities to replace all CSS classes (D14)
+- [X] T083 Refactor `components/MessageLog.tsx`: add a small character icon/avatar beside character messages (left-aligned with icon), keep visitor messages right-aligned, ensure both message types share the same right edge (FR-002 updated). Use Tailwind utilities for all styling
+- [X] T084 [P] Refactor `components/ChatPanel.tsx`: replace all CSS classes with Tailwind utilities. Layout and structure unchanged (D13)
+- [X] T085 [P] Refactor `components/MessageInput.tsx`: replace all CSS classes with Tailwind utilities. Behaviour unchanged (D13)
+- [X] T086 [P] Refactor `components/Announcer.tsx`: replace CSS class with Tailwind `sr-only` or equivalent. Behaviour unchanged (D13)
+- [X] T087 [P] Refactor `components/CharacterStage.tsx` and `components/StillCharacter.tsx`: replace CSS classes with Tailwind utilities. Behaviour unchanged (D13)
+
+### Responsive Behaviour
+
+- [X] T088 Ensure both character area and chat panel remain visible on narrow/short viewports with the character area shrinking proportionally rather than collapsing or scrolling away, using Tailwind responsive utilities (FR-003 updated, D14)
+
+### Tests for Phase 8
+
+- [X] T089 [P] Component test updates in `tests/component/`: verify `MessageLog` renders character icon beside character messages and correct alignment, verify `SpeechBubble` renders streaming text, thinking dots, and clears on error. [Note: Superseded by Phase 13]
+- [X] T090 [P] E2E test `tests/e2e/speech-bubble.spec.ts`: speech bubble shows streaming reply text during a turn, shows thinking dots during wait, clears on error, clears previous reply when a new turn begins streaming, and does not show error/limit text. [Note: Superseded by Phase 13]
+- [X] T091 [P] E2E test `tests/e2e/layout.spec.ts`: page renders vertical stack with character area top and chat panel bottom; both visible at 360px and 820px widths; character area shrinks proportionally (FR-001, FR-003, D14)
+- [X] T092 Re-run full existing test suite (`npm test` and `npm run test:e2e`) to confirm no regression from Tailwind migration and layout changes
+- [X] T093 Run `npm run build` and `npm run verify:bundle` to confirm production build passes and no secrets leak
+
+**Checkpoint**: Layout matches the wireframe, all styles are Tailwind utilities, full test suite green.
+
+---
+
+## Updated Dependencies & Execution Order
+
+### Phase 8 Dependencies
+
+- **Phase 8**: Depends on Phase 1-6 completion (all code exists). Independent of Phase 7 manual tasks
+- T077 before T078 (Tailwind must be installed before globals.css rewrite)
+- T078-T079 before T080-T088 (Tailwind setup must work before migrating components)
+- T080-T088 can proceed in parallel (different component files)
+- T081 before T089-T090 (SpeechBubble must exist before its tests)
+- T092-T093 after all other Phase 8 tasks
+
+### Phase 8 Parallel Opportunities
+
+- T084, T085, T086, T087 all in parallel (independent component files)
+- T089, T090, T091 all in parallel (independent test files)
+
+---
+
+## Updated Notes
+
+- 93 tasks total (78 original + 15 new in Phase 8)
+- Phase 8 is purely presentational - it does not touch `lib/character/`, `lib/conversation/`,
+  `lib/server/`, or `lib/emotion.ts`. The seam is unaffected
+- The SpeechBubble receives its data from page-level props, not from cross-seam imports
+- Tailwind migration is done component-by-component to minimize regression risk
+
+---
+
+## Phase 9: Character Model Scaling Bug Fix (FR-042)
+
+**Purpose**: Fix the Live2D character model layout so the full body is visible head-to-toe within the
+character display area, scaled down to fit rather than cropped. The current `layoutModel()` in
+`renderer.ts` uses `anchor(0.5, 0)` with `y = 0`, which pushes the model's head and face above the
+canvas boundary. This phase satisfies the new FR-042 requirement and renderer contract guarantee R13.
+
+**Depends on**: Phase 3 (US1 - the renderer exists). Independent of all other phases.
+
+**Root cause**: `layoutModel()` pins the model anchor at top-center `(0.5, 0)` with `y = 0`, but
+Haru's internal origin is at the model center, so the upper half (head, face, shoulders) extends
+above the canvas and is clipped by `overflow: hidden`. The scale calculation uses only height,
+ignoring width, and does not account for the anchor offset.
+
+### Tests for Phase 9
+
+- [X] T094 [P] [US1] Unit test in `tests/unit/renderer.test.ts` for R13: after `createCharacter`
+  resolves and after calling `resize()`, assert the model's rendered bounds (position minus
+  anchor-adjusted dimensions through position plus remaining dimensions) are contained entirely
+  within the canvas width and height - no coordinate is negative and no coordinate exceeds the
+  canvas dimension. Test at two container aspect ratios: one taller than the model (portrait) and
+  one wider (landscape) (FR-042, R13)
+- [X] T095 [P] [US1] E2E visual test in `tests/e2e/character.spec.ts`: take a screenshot of the
+  character area after load and assert the model's head is within the visible region - specifically
+  that the top ~20% of the character area is not empty (a regression guard against the cropping
+  bug returning). Use pixel sampling or screenshot comparison (FR-042, SC-002)
+
+### Implementation for Phase 9
+
+- [X] T096 [US1] Fix `layoutModel()` in `lib/character/renderer.ts`: change anchor from `(0.5, 0)`
+  to `(0.5, 0.5)`, position from `(width/2, 0)` to `(width/2, height/2)`, and replace the
+  single-axis scale `(height * 0.9) / originalHeight` with a contain-fit scale
+  `Math.min(width / originalWidth, height / originalHeight) * 0.85` so the model fits entirely
+  within the canvas at any container aspect ratio. The 0.85 factor provides breathing room so the
+  model does not touch the container edges (FR-042, R13)
+
+### Regression for Phase 9
+
+- [X] T097 Re-run `npm test` and `npm run test:e2e` to confirm no regression from the layout
+  change - in particular T022 (renderer contract), T025 (character E2E), T067 (reduced motion),
+  T071 (endurance), and T091 (layout responsive) must all still pass
+- [X] T098 Manual visual check at three viewport widths (360px, 820px, 1200px): the character's
+  full body including head and face is visible, centred, and proportionally scaled in all three.
+  Record screenshots in the PR (FR-042, FR-003)
+
+**Checkpoint**: The character model is fully visible head-to-toe at all container sizes. No cropping.
+
+---
+
+## Phase 9 Dependencies
+
+- T094 and T095 can run in parallel (different test files)
+- T096 after T094 (test-first per constitution II)
+- T097 after T096
+- T098 after T096
+
+---
+
+## Updated Notes (Phase 9)
+
+- 98 tasks total (93 previous + 5 new in Phase 9)
+- Phase 9 touches only `lib/character/renderer.ts` (the `layoutModel()` closure) and test files.
+  No component, conversation, server, or seam changes. The emotion seam is unaffected
+3. US2 - full streaming conversation against a still image - deploy
+4. US3 - connect the two across the seam - deploy
+5. US4 - the thinking state - deploy
+6. Polish - the cross-story validation scenarios and the constitution's merge gates
+
+### Parallel Team Strategy
+
+After Foundational, US1 and US2 are genuinely independent: one developer takes `lib/character/`,
+another takes `lib/conversation/` and `lib/server/`, and the lint boundary rule from T015 makes an
+accidental coupling a build failure rather than a merge conflict discovered late. US3 is then a
+two-file integration either of them can do.
+
+---
+
+## Notes
+
+- 78 tasks. Tests are non-optional here (constitution Principle II), so test tasks are counted in
+- `T007a` and `T039a` carry letter suffixes because they were inserted after numbering. Renumbering
+  seventy tasks to keep the sequence pretty would have rewritten every cross-reference in this file
+  for no execution benefit
+- [P] means a different file and no dependency on an incomplete task
+- The provider is a scripted stream fixture (T007a) in every automated test, so the suite never
+  consumes the 150-per-day ceiling (research D11). T074 is the one deliberate exception: SC-006
+  measures the real model's cue compliance, which no fixture can
+- Commit after each task or logical group; stop at any checkpoint to validate a story on its own
+- SC-003's 60fps target is a recorded measurement (T072), not a CI assertion - headless WebGL runs on
+  a software rasteriser
+
+---
+
+## Implementation status (as of 2026-09-12)
+
+**74 of 78 tasks complete (100% of automated code and test tasks).** 203 automated tests green: 113 Vitest (unit + component), 90 Playwright (API contract, conversation, emotion, thinking, character, failures, endurance, accessibility, reduced motion). `npm run build`, `npm run lint`, and `npm run verify:bundle` all pass cleanly.
+
+Remaining 4 tasks (T069, T070, T072, T074) are manual observational passes, devtools physical hardware traces, and live provider checks reserved for human recording in the pull request.
+
+### Live2D Rig & Core Integration Complete
+
+- `public/live2d/core/live2dcubismcore.min.js` vendored and loaded via `next/script` beforeInteractive.
+- Haru Cubism 4 sample model vendored into `public/live2d/model/` with expressions, motions, and license.
+- Rig inventory completed in `specs/001-animated-character-chat/contracts/rig-inventory.md`.
+- PixiJS v7 and `pixi-live2d-display/cubism4` renderer lifecycle, idle loop, emotion reactions, preemption, thinking state, and reduced-motion suppression fully implemented and passing all contract suites.
+- Sound references stripped from model descriptor and disabled in config to prevent text-only motion hangs.
+
+### Deviations from the plan, both recorded in README.md
+
+1. **Runtime**: `nodejs`, not Edge. Next 16 deprecates the Edge runtime; research D8's reasoning
+   (stream natively, never buffer) is satisfied either way.
+2. **A client-side stall watchdog** was added to `useConversation`. FR-034 forbids the endpoint
+   cutting off an already-streaming reply, but the spec's stalled-reply edge case also requires the
+   visitor be able to send again. No server behaviour satisfies both, so the client gives up after
+   10 seconds of silence and keeps every character already shown.
+
+### One new shared leaf module
+
+`lib/limits.ts` holds the 300-character and 6-message caps. Both sides enforce them independently -
+the browser so the cap is visible before sending, the endpoint because it may not trust the browser -
+and the seam forbids `lib/server` importing `lib/conversation`. One declaration, two enforcement
+points, no drift.
+
+---
+
+## Phase 8: Layout Redesign & Tailwind Migration (D13, D14)
+
+**Purpose**: Migrate from custom CSS to Tailwind CSS v4 and restructure the page from side-by-side
+grid to vertical stack with speech bubble overlay, per the wireframe clarifications in spec Session
+2026-09-13.
+
+**Depends on**: All four user stories complete (Phase 1-6). This is a presentation-layer refactor
+that touches components and styles but not `lib/character/`, `lib/conversation/`, or `lib/server/`.
+
+### Tailwind Setup
+
+- [X] T077 Install `tailwindcss` and `@tailwindcss/postcss` as dev dependencies, create `postcss.config.mjs` with `@tailwindcss/postcss` plugin per Next.js 16 docs (research D13)
+- [X] T078 Rewrite `app/globals.css`: replace all custom class definitions with `@import 'tailwindcss'`, keep only CSS custom properties (`:root` block from `lib/ui/tokens.ts`), the `prefers-reduced-motion: reduce` media query, the `.visually-hidden` utility, and the `@keyframes` needed by the waiting-pulse animation (D13)
+- [X] T079 Verify `npm run build` and `npm run dev` work with Tailwind - all existing pages render correctly with the new setup before any component migration
+
+### Layout Migration
+
+- [X] T080 [P] Refactor `app/page.tsx`: change layout from `grid-template-columns: 1fr 1fr` (side-by-side) to a vertical flex column stack - character area top, chat panel bottom. Pass `latestCharacterMessage` and `conversation.status` as props to `CharacterArea` for the speech bubble. Use Tailwind utility classes for all layout (D14, FR-001 updated)
+- [X] T081 Create `components/SpeechBubble.tsx`: absolutely positioned overlay on the character area showing the latest character reply text with progressive streaming, an animated thinking indicator (dots) during `status === 'waiting'`, empty/hidden on error/timeout/rate-limit, clearing previous text when a new reply begins streaming, and respecting reduced-motion preference for the dots animation (FR-014). Use Tailwind utilities for all styling. [Note: Superseded by Phase 13]
+- [X] T082 Refactor `components/CharacterArea.tsx`: integrate `SpeechBubble` as a child, positioned absolute over the top-right of the character area per the wireframe. Use Tailwind utilities to replace all CSS classes (D14)
+- [X] T083 Refactor `components/MessageLog.tsx`: add a small character icon/avatar beside character messages (left-aligned with icon), keep visitor messages right-aligned, ensure both message types share the same right edge (FR-002 updated). Use Tailwind utilities for all styling
+- [X] T084 [P] Refactor `components/ChatPanel.tsx`: replace all CSS classes with Tailwind utilities. Layout and structure unchanged (D13)
+- [X] T085 [P] Refactor `components/MessageInput.tsx`: replace all CSS classes with Tailwind utilities. Behaviour unchanged (D13)
+- [X] T086 [P] Refactor `components/Announcer.tsx`: replace CSS class with Tailwind `sr-only` or equivalent. Behaviour unchanged (D13)
+- [X] T087 [P] Refactor `components/CharacterStage.tsx` and `components/StillCharacter.tsx`: replace CSS classes with Tailwind utilities. Behaviour unchanged (D13)
+
+### Responsive Behaviour
+
+- [X] T088 Ensure both character area and chat panel remain visible on narrow/short viewports with the character area shrinking proportionally rather than collapsing or scrolling away, using Tailwind responsive utilities (FR-003 updated, D14)
+
+### Tests for Phase 8
+
+- [X] T089 [P] Component test updates in `tests/component/`: verify `MessageLog` renders character icon beside character messages and correct alignment, verify `SpeechBubble` renders streaming text, thinking dots, and clears on error. [Note: Superseded by Phase 13]
+- [X] T090 [P] E2E test `tests/e2e/speech-bubble.spec.ts`: speech bubble shows streaming reply text during a turn, shows thinking dots during wait, clears on error, clears previous reply when a new turn begins streaming, and does not show error/limit text. [Note: Superseded by Phase 13]
+- [X] T091 [P] E2E test `tests/e2e/layout.spec.ts`: page renders vertical stack with character area top and chat panel bottom; both visible at 360px and 820px widths; character area shrinks proportionally (FR-001, FR-003, D14)
+- [X] T092 Re-run full existing test suite (`npm test` and `npm run test:e2e`) to confirm no regression from Tailwind migration and layout changes
+- [X] T093 Run `npm run build` and `npm run verify:bundle` to confirm production build passes and no secrets leak
+
+**Checkpoint**: Layout matches the wireframe, all styles are Tailwind utilities, full test suite green.
+
+---
+
+## Updated Dependencies & Execution Order
+
+### Phase 8 Dependencies
+
+- **Phase 8**: Depends on Phase 1-6 completion (all code exists). Independent of Phase 7 manual tasks
+- T077 before T078 (Tailwind must be installed before globals.css rewrite)
+- T078-T079 before T080-T088 (Tailwind setup must work before migrating components)
+- T080-T088 can proceed in parallel (different component files)
+- T081 before T089-T090 (SpeechBubble must exist before its tests)
+- T092-T093 after all other Phase 8 tasks
+
+### Phase 8 Parallel Opportunities
+
+- T084, T085, T086, T087 all in parallel (independent component files)
+- T089, T090, T091 all in parallel (independent test files)
+
+---
+
+## Updated Notes
+
+- 93 tasks total (78 original + 15 new in Phase 8)
+- Phase 8 is purely presentational - it does not touch `lib/character/`, `lib/conversation/`,
+  `lib/server/`, or `lib/emotion.ts`. The seam is unaffected
+- The SpeechBubble receives its data from page-level props, not from cross-seam imports
+- Tailwind migration is done component-by-component to minimize regression risk
+
+---
+
+## Phase 9: Character Model Scaling Bug Fix (FR-042)
+
+**Purpose**: Fix the Live2D character model layout so the full body is visible head-to-toe within the
+character display area, scaled down to fit rather than cropped. The current `layoutModel()` in
+`renderer.ts` uses `anchor(0.5, 0)` with `y = 0`, which pushes the model's head and face above the
+canvas boundary. This phase satisfies the new FR-042 requirement and renderer contract guarantee R13.
+
+**Depends on**: Phase 3 (US1 - the renderer exists). Independent of all other phases.
+
+**Root cause**: `layoutModel()` pins the model anchor at top-center `(0.5, 0)` with `y = 0`, but
+Haru's internal origin is at the model center, so the upper half (head, face, shoulders) extends
+above the canvas and is clipped by `overflow: hidden`. The scale calculation uses only height,
+ignoring width, and does not account for the anchor offset.
+
+### Tests for Phase 9
+
+- [X] T094 [P] [US1] Unit test in `tests/unit/renderer.test.ts` for R13: after `createCharacter`
+  resolves and after calling `resize()`, assert the model's rendered bounds (position minus
+  anchor-adjusted dimensions through position plus remaining dimensions) are contained entirely
+  within the canvas width and height - no coordinate is negative and no coordinate exceeds the
+  canvas dimension. Test at two container aspect ratios: one taller than the model (portrait) and
+  one wider (landscape) (FR-042, R13)
+- [X] T095 [P] [US1] E2E visual test in `tests/e2e/character.spec.ts`: take a screenshot of the
+  character area after load and assert the model's head is within the visible region - specifically
+  that the top ~20% of the character area is not empty (a regression guard against the cropping
+  bug returning). Use pixel sampling or screenshot comparison (FR-042, SC-002)
+
+### Implementation for Phase 9
+
+- [X] T096 [US1] Fix `layoutModel()` in `lib/character/renderer.ts`: change anchor from `(0.5, 0)`
+  to `(0.5, 0.5)`, position from `(width/2, 0)` to `(width/2, height/2)`, and replace the
+  single-axis scale `(height * 0.9) / originalHeight` with a contain-fit scale
+  `Math.min(width / originalWidth, height / originalHeight) * 0.85` so the model fits entirely
+  within the canvas at any container aspect ratio. The 0.85 factor provides breathing room so the
+  model does not touch the container edges (FR-042, R13)
+
+### Regression for Phase 9
+
+- [X] T097 Re-run `npm test` and `npm run test:e2e` to confirm no regression from the layout
+  change - in particular T022 (renderer contract), T025 (character E2E), T067 (reduced motion),
+  T071 (endurance), and T091 (layout responsive) must all still pass
+- [X] T098 Manual visual check at three viewport widths (360px, 820px, 1200px): the character's
+  full body including head and face is visible, centred, and proportionally scaled in all three.
+  Record screenshots in the PR (FR-042, FR-003)
+
+**Checkpoint**: The character model is fully visible head-to-toe at all container sizes. No cropping.
+
+---
+
+## Phase 9 Dependencies
+
+- T094 and T095 can run in parallel (different test files)
+- T096 after T094 (test-first per constitution II)
+- T097 after T096
+- T098 after T096
+
+---
+
+## Updated Notes (Phase 9)
+
+- 98 tasks total (93 previous + 5 new in Phase 9)
+- Phase 9 touches only `lib/character/renderer.ts` (the `layoutModel()` closure) and test files.
+  No component, conversation, server, or seam changes. The emotion seam is unaffected
+- The fix is three lines in one function: anchor, position, and scale. Constitution II requires the
+  test (T094) to exist and fail before the fix (T096) is applied
+
+---
+
+## Phase 10: External Backend Migration (D15 — FR-043 to FR-047)
+
+**Purpose**: Remove the in-project API route and `lib/server/` layer. Replace with direct calls to
+the external FastAPI backend via `POST /threads` (thread creation on load) and `POST /chat`
+(`user_input` + `thread_id`, plain-text streaming response). This makes the project frontend-only.
+
+**Depends on**: All prior phases complete (the conversation hook, renderer, and tests all exist).
+
+**Contract**: [contracts/chat-api.md](./contracts/chat-api.md) (rewritten for D15).
+
+### Backend Client Module
+
+- [X] T099 [P] Create `lib/conversation/backend.ts` with two functions and one resolver:
+  - `getBackendUrl(): string` — reads `process.env.NEXT_PUBLIC_BACKEND_URL`, falls back to
+    `http://127.0.0.1:8000`
+  - `createThread(): Promise<string>` — `POST ${backendUrl}/threads`, returns the UUID string from
+    the response body, throws on non-200 or network error
+  - `sendMessage(threadId: string, userInput: string, signal?: AbortSignal): Promise<Response>` —
+    `POST ${backendUrl}/chat` with JSON body `{ user_input: userInput, thread_id: threadId }`,
+    returns the raw `Response` for stream reading, throws on network error
+  This module is the single place that knows the backend URL and the request shapes (FR-047, D15)
+
+- [X] T100 [P] Unit test `tests/unit/backend.test.ts`:
+  - `getBackendUrl` returns the env value when set, falls back to `http://127.0.0.1:8000` when unset
+  - `createThread` returns a UUID string on 200, throws on 500, throws on network error
+  - `sendMessage` sends the correct JSON body and passes the signal through
+  - No test contacts a real backend — use `vi.fn()` / `globalThis.fetch` mock (FR-047)
+
+### Conversation Hook Refactor
+
+- [X] T101 Refactor `lib/conversation/useConversation.ts` (FR-043, FR-045, FR-046, FR-047):
+  1. Add `threadId` state (`string | null`, initially `null`)
+  2. Add `'connecting'` to `ConversationStatus` union — active while thread creation is in progress
+  3. On mount, call `createThread()` from `backend.ts`:
+     - On success: store the UUID in `threadId`, set status to `'idle'`
+     - On failure: set status to `'error'`, set notice to `copy.backendUnavailable`, leave
+       `threadId` as `null`. Sending remains disabled while `threadId` is null (FR-045)
+  4. In `send()`:
+     - Guard: refuse to send if `threadId` is null (display connection notice)
+     - Replace `fetch('/api/chat', { body: JSON.stringify({ messages: history }) })` with
+       `sendMessage(threadId, text, controller.signal)` from `backend.ts`
+     - Remove the `outboundHistory` call entirely — the backend manages context via thread (D15)
+  5. The stream-reading loop, cue reader, stall watchdog, and all failure mapping remain unchanged
+  6. Export `threadId` from the `Conversation` interface so components can check readiness
+
+- [X] T102 Update components that switch on `ConversationStatus` to handle the new `'connecting'`
+  value in `components/ChatPanel.tsx`, `components/MessageInput.tsx`, and
+  `components/Announcer.tsx`:
+  - `ChatPanel`: show a connection notice during `'connecting'`
+  - `MessageInput`: disable the send button during `'connecting'` with the connection notice as
+    the disabled reason
+  - `Announcer`: announce the connection notice during `'connecting'`
+
+### Limits Cleanup
+
+- [X] T103 Remove `outboundHistory()`, `OutboundMessage` type, and `HISTORY_WINDOW` re-export from
+  `lib/conversation/limits.ts`. Keep `Message`, `MessageStatus`, `MessageAuthor`, `isSendable`,
+  `clampInput`, `remainingCharacters`, `atCharacterLimit`, and `MAX_INPUT_CHARACTERS` (D15).
+  Update `lib/limits.ts` to remove `HISTORY_WINDOW` if no other consumer remains
+
+- [X] T104 Update `tests/unit/limits.test.ts`: remove tests for `outboundHistory` and
+  `HISTORY_WINDOW`. Keep all tests for `MAX_INPUT_CHARACTERS`, `isSendable`, `clampInput`,
+  `remainingCharacters`, and `atCharacterLimit`
+
+### Environment Configuration
+
+- [X] T105 [P] Update `.env.example`: remove `GROQ_API_KEY`, `GROQ_BASE_URL`, `GROQ_MODEL`,
+  `DAILY_REQUEST_LIMIT`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`. Add
+  `NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000` with a comment referencing D15 and FR-032
+
+- [X] T106 [P] Update `.env` (local): add `NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000`. Remove
+  the server-side variables that are no longer needed
+
+### Copy Updates
+
+- [X] T107 [P] Add `backendUnavailable` string to `lib/ui/copy.ts`:
+  `'Could not connect to the backend. Please reload the page to try again.'`
+  This is the notice shown when thread creation fails on load (FR-045). No automatic retry —
+  consistent with the no-auto-retry pattern from FR-034; the visitor reloads to reconnect
+
+### Server-Side Code Removal
+
+- [X] T108 Delete `app/api/chat/route.ts` and remove the `app/api/` directory (FR-047)
+- [X] T109 Delete `lib/server/` directory entirely: `copy.ts`, `groq.ts`, `persona.ts`, `quota.ts`,
+  `validate.ts` (D15, FR-044)
+- [X] T110 [P] Remove `@upstash/redis` from `package.json` dependencies and run `npm install`
+
+### Test Updates
+
+- [X] T111 [P] Delete `tests/unit/quota.test.ts` — the quota is the backend's responsibility (D15)
+- [X] T112 [P] Delete `tests/unit/persona.test.ts` — the persona is the backend's responsibility
+- [X] T113 Update `tests/unit/boundaries.test.ts`: remove assertions about `lib/server/` imports.
+  Add assertion that no file under `lib/conversation/` imports from `app/api/` (since the route
+  no longer exists, this is a regression guard)
+- [X] T114 Update E2E conversation tests (`tests/e2e/conversation.spec.ts`,
+  `tests/e2e/api-chat.spec.ts`, and other E2E tests) to run against a mock backend server instead
+  of the in-project API route. The mock backend serves `/threads` (returns a UUID) and `/chat`
+  (returns scripted streaming responses). All existing conversation flow assertions must pass
+- [X] T115 Update `tests/fixtures/` — add a `mock-backend.ts` that serves `/threads` and `/chat`
+  endpoints matching the contract in `contracts/chat-api.md`. Existing scripted provider streams
+  from `tests/fixtures/scripts.ts` are reused as the `/chat` response bodies. Configure as a
+  Playwright `webServer` alongside the dev server
+- [X] T116 Update component tests that reference `'idle'` as the initial status to also test the
+  `'connecting'` to `'idle'` transition, and verify that the send button is disabled during
+  `'connecting'` (FR-045)
+
+### Regression & Verification
+
+- [X] T117 Re-run `npm run build` to verify the production build succeeds with no server-side
+  modules, no `@upstash/redis`, and no `app/api/` route. Run `npm run lint` to verify the
+  boundary rules still pass
+
+- [X] T118 Re-run `npm test` and `npm run test:e2e` — full suite must be green. Specifically
+  verify: conversation E2E (V2), emotion E2E (V5), thinking E2E (V6), failures E2E (V7),
+  reduced-motion E2E (V8), endurance E2E (V11), and the new backend client unit tests
+
+**Checkpoint**: The project is frontend-only. No API route, no `lib/server/`, no `@upstash/redis`.
+The conversation hook fetches a thread UUID on load and sends `user_input` + `thread_id` to the
+external backend. All automated tests pass against a mock backend.
+
+---
+
+## Phase 10 Dependencies
+
+- T099 and T100 can run in parallel (backend module + its test)
+- T101 depends on T099 (needs `createThread` and `sendMessage`)
+- T102 depends on T101 (needs the `'connecting'` status)
+- T103 and T104 can run in parallel with T101 (different files), but logically follow from the
+  `outboundHistory` removal in T101
+- T105, T106, T107, and T110 are all independent and can run in parallel immediately
+- T108 and T109 depend on T101 (the hook must no longer import `lib/server/` or hit `/api/chat`)
+- T111 and T112 can run in parallel with T108/T109
+- T113 depends on T108/T109 (server code must be deleted before boundary test is updated)
+- T114 and T115 depend on T099 (need the mock backend shape)
+- T116 depends on T102 (needs the `'connecting'` status in components)
+- T117 depends on T108, T109, T110 (all server code and deps removed)
+- T118 depends on all prior Phase 10 tasks
+
+### Within Phase 10
+
+- Backend module (T099/T100) before hook refactor (T101)
+- Hook refactor (T101) before component updates (T102)
+- Server deletion (T108/T109) after hook refactor (T101)
+- Full regression (T117/T118) last
+
+### Parallel Opportunities
+
+- T099, T100, T105, T106, T107, T110 can all start immediately (different files)
+- T103, T104, T111, T112 can run in parallel once T101 is done
+- T108, T109 can run in parallel once T101 is done
+
+---
+
+## Parallel Example: Phase 10
+
+```bash
+# Immediate — all parallel, different files:
+Task: "Create backend client module in lib/conversation/backend.ts"          # T099
+Task: "Unit test backend client in tests/unit/backend.test.ts"               # T100
+Task: "Update .env.example for D15"                                          # T105
+Task: "Update .env for D15"                                                  # T106
+Task: "Add backendUnavailable copy string in lib/ui/copy.ts"                 # T107
+Task: "Remove @upstash/redis from package.json"                              # T110
+
+# After T099:
+Task: "Refactor useConversation.ts for thread lifecycle"                     # T101
+
+# After T101 — parallel:
+Task: "Update components for 'connecting' status"                            # T102
+Task: "Remove outboundHistory from limits.ts"                                # T103
+Task: "Update limits tests"                                                  # T104
+Task: "Delete app/api/chat/route.ts"                                         # T108
+Task: "Delete lib/server/ directory"                                         # T109
+Task: "Delete quota and persona tests"                                       # T111, T112
+```
+
+---
+
+## Updated Implementation Strategy (Phase 10)
+
+### Incremental Delivery
+
+1. Setup and Foundational → Foundation ready
+2. US1 → animated character, no chat → deploy (MVP)
+3. US2 → full streaming conversation → deploy
+4. US3 → connect the two across the seam → deploy
+5. US4 → the thinking state → deploy
+6. Polish → cross-story validation
+7. Layout & Tailwind → vertical stack with speech bubble
+8. Character scaling → full body visible
+9. **Backend migration → frontend-only, external FastAPI backend → deploy**
+
+Each step adds value without breaking previous steps.
+
+---
+
+## Updated Notes (Phase 10)
+
+- **118 tasks total** (98 previous + 20 new in Phase 10)
+- Phase 10 touches `lib/conversation/` (backend.ts, useConversation.ts, limits.ts),
+  `lib/ui/copy.ts`, `.env*`, and test files. It **deletes** `app/api/chat/route.ts`,
+  `lib/server/*`, and removes `@upstash/redis`
+- The emotion seam is **unaffected**: `lib/emotion.ts`, `lib/character/*`, and the cue reader
+  are unchanged. The streaming format is identical
+- The `createCueReader` in `lib/conversation/cue.ts` continues to work because the external
+  backend produces the same plain-text stream format the old route did
+- T007a's stub server concept is reused in T115 as a mock backend for E2E tests
+- Commit after each task or logical group. T117/T118 is the final verification gate
+
+---
+
+## Phase 11: Sidebar & Overlay Layout Redesign (Supersedes Phase 8)
+
+**Purpose**: Refactor the vertical stack layout from Phase 8 into a full-screen character area with a collapsible sidebar and a 50% transparent bottom chat overlay per the latest UI specifications (FR-001, FR-003).
+
+**Depends on**: Phase 10. (This modifies the completed layout from Phase 8).
+
+### Tests for Phase 11
+
+- [X] T119 [P] Update E2E layout test `tests/e2e/layout.spec.ts`: assert the new sidebar structure exists on desktop viewports, the chat panel overlays the bottom 50% of the character area with a transparent background, and on mobile viewports (< 640px) the sidebar is an off-canvas drawer toggled by a hamburger menu (FR-001, FR-003)
+- [X] T120 [P] Component test updates in `tests/component/` for the new `Sidebar` component.
+
+### Implementation for Phase 11
+
+- [X] T121 Create `components/Sidebar.tsx`: A collapsible sidebar containing a "New Chat" button and a list of mock past conversations (using dummy data). Use Tailwind utilities.
+- [X] T122 Refactor `app/page.tsx`: Change layout to a full-screen character display with the `Sidebar` on the left. Introduce a hamburger menu button (visible only < 640px) to toggle the sidebar as an off-canvas drawer on mobile (FR-003).
+- [X] T123 Refactor `components/ChatPanel.tsx` and its usage: ensure it overlays the bottom 50% of the character area and has a transparent background (FR-001).
+
+**Checkpoint**: Layout matches the updated specification, all tests pass.
+
+---
+
+## Phase 12: Chat Overlay Visual Fidelity & Contrast Refinement (D16 — FR-001, FR-002)
+
+**Purpose**: Replace uniform chat overlay with a top-to-bottom transparent-to-dark gradient, eliminate heavy backdrop blur to keep the character's torso/clothing/posture sharp and discernible, maximize text contrast with pure white typography and subtle shadows, and keep character artwork visible through translucent bubbles.
+
+**Depends on**: Phase 11.
+
+### Tests for Phase 12
+
+- [X] T124 [P] Update E2E layout test `tests/e2e/layout.spec.ts`: update background transparency assertion regex to accept `rgba(0, 0, 0, 0)` (alpha 0 computed from CSS linear gradient) and verify responsive overlay across breakpoints (FR-001, FR-003).
+
+### Implementation for Phase 12
+
+- [X] T125 Refactor `components/ChatPanel.tsx` background: replace uniform overlay with top-to-bottom transparent-to-dark gradient (`bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)]`), remove `border-t border-[var(--border)]` and top `shadow-2xl` to ensure seamless transition without harsh horizontal cutoff (FR-001, D16).
+- [X] T126 Remove `backdrop-blur-md` from `components/ChatPanel.tsx` to maintain character's physical presence and sharp silhouette without smearing clothing/posture into abstract color blobs (FR-001, D16).
+- [X] T127 Maximize text contrast: update dialogue and primary text in `components/MessageLog.tsx`, `components/SpeechBubble.tsx`, and `components/MessageInput.tsx` to pure white (`text-white`) with subtle shadow (`drop-shadow-md` and `[text-shadow:_0_1px_2px_rgba(0,0,0,0.8)]`), and apply translucent bubble styling (`bg-[var(--bubble-character)]/60`, `bg-[var(--bubble-visitor)]/85`) to keep character artwork visible behind dialogue (FR-001, FR-002, D16).
+- [X] T128 Full validation pass: run `vitest run` (106 unit & component tests), `playwright test tests/e2e/layout.spec.ts` (3 responsive layout E2E tests), and `eslint .` (0 errors).
+
+**Checkpoint**: Visual fidelity matches reference specifications; gradient transition, unblurred silhouette, and high-contrast typography are active and verified across all test suites.
+
+---
+
+## Phase 13: UI Refinements for Speech Bubble Removal (FR-040, D14)
+
+**Purpose**: Completely remove the SpeechBubble.tsx overlay. Move the typing/thinking indicator into a temporary message bubble inside the ChatPanel (MessageLog.tsx), keeping all character dialogue strictly within the chat panel overlay.
+
+**Depends on**: Phase 12.
+
+### Tests for Phase 13
+
+- [X] T129 [P] Update component tests in `tests/component/`: verify `MessageLog` displays a temporary typing/thinking bubble when `status === 'waiting'`, and verify that `SpeechBubble` tests are removed.
+- [X] T130 [P] Update E2E test `tests/e2e/speech-bubble.spec.ts` (rename to `tests/e2e/thinking-indicator.spec.ts` or similar): verify the thinking indicator appears in the chat panel instead of the speech bubble overlay.
+
+### Implementation for Phase 13
+
+- [X] T131 Remove `components/SpeechBubble.tsx`.
+- [X] T132 Refactor `app/page.tsx` and `components/CharacterArea.tsx`: remove `SpeechBubble` rendering logic and props.
+- [X] T133 Refactor `components/MessageLog.tsx`: implement a temporary typing/thinking indicator message bubble that appears at the bottom of the log when `conversation.status === 'waiting'`. Ensure it respects `prefers-reduced-motion` for any animations (FR-014, FR-040).
+- [X] T134 Full validation pass: run all tests (`npm test`, `npm run test:e2e`) to confirm no regressions and that the typing indicator correctly displays in the chat panel.
+
+**Checkpoint**: The speech bubble is removed and the chat panel natively handles the thinking indicator state.

@@ -10,6 +10,8 @@ import { expect, test, type Page } from '@playwright/test';
 test.beforeEach(async ({ request, page }) => {
   await request.post('http://127.0.0.1:4319/control/reset');
   await page.goto('/');
+  // Wait for initial thread connection to complete (FR-043, FR-045)
+  await expect(page.locator('.connecting-indicator')).toHaveCount(0, { timeout: 10_000 });
 });
 
 test.describe('keyboard only (FR-003, SC-014)', () => {
@@ -105,6 +107,7 @@ test.describe('contrast meets WCAG AA (constitution III)', () => {
     await page.getByRole('textbox').fill('#provider-500 hi');
     await page.getByRole('button', { name: 'Send' }).click();
     await expect(page.locator('.status-line.error')).toBeVisible();
+    await expect(page.locator('.status-line.error')).toHaveCSS('color', 'rgb(255, 154, 138)');
 
     const ratio = await contrastOf(page, '.status-line.error');
     expect(ratio, `failure text measured ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);

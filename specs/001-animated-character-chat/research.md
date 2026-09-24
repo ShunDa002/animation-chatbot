@@ -279,6 +279,107 @@ replace the route handler without the conversation layer noticing. The repositor
 
 ---
 
+## D13. Styling: Tailwind CSS v4
+
+**Decision**: Replace all custom CSS in `globals.css` with Tailwind CSS v4 utility classes. Install
+`tailwindcss` and `@tailwindcss/postcss` as dev dependencies, configure via `postcss.config.mjs`,
+and import `tailwindcss` in `globals.css`. Keep a minimal globals.css for the Tailwind import,
+CSS custom properties (design tokens from `lib/ui/tokens.ts`), and the reduced-motion media query
+that cannot be expressed as utilities.
+
+**Rationale**: The user prefers Tailwind over custom CSS. Tailwind v4 is the version recommended by
+Next.js 16 docs. Using utilities directly in JSX co-locates styles with markup, removes the need
+for a class naming convention, and makes dead-CSS elimination automatic. The constitution's
+single-source-of-truth rule (Principle III) is satisfied by Tailwind's theme layer plus the tokens
+file for values that CSS custom properties must still provide (animation durations for Live2D
+cross-fades, which Tailwind classes do not drive).
+
+**Alternatives considered**:
+
+- Keep custom CSS: works, but the user explicitly asked for Tailwind.
+- CSS Modules: scoped but still hand-written CSS; less utility than Tailwind for rapid iteration.
+- Tailwind v3: older, requires `tailwind.config.js`; Next.js 16 docs point to v4 by default.
+
+---
+
+## D14. Layout: vertical stack with chat overlay
+
+**Decision**: Change the page layout from a side-by-side grid (character left, chat right) to a
+vertically stacked layout (character area top, chat panel bottom). The chat panel overlays the bottom 50% of the character area. A typing indicator is displayed as a temporary message bubble inside the chat panel when the character is in the thinking state (FR-040). The speech bubble overlay has been completely removed.
+
+**Rationale**: The wireframe provided by the user specifies this layout. The vertical stack gives
+the character more visual prominence. On narrow viewports both sections remain visible with the character area shrinking
+proportionally (FR-003 updated). Message alignment follows the wireframe: character messages
+left-aligned with icon, visitor messages right-aligned, same right edge (FR-002 updated).
+
+**Structural changes**:
+- `page.tsx`: layout changes from `grid-template-columns: 1fr 1fr` to `flex-direction: column`
+- `MessageLog.tsx`: adds character icon beside character messages, and supports a temporary typing indicator bubble
+- `SpeechBubble.tsx`: deleted completely
+- All CSS classes replaced with Tailwind utilities
+
+---
+
+## D15. External FastAPI backend — frontend/backend separation
+
+**Decision**: Remove the Next.js API route (`app/api/chat/route.ts`) and the entire `lib/server/`
+layer. The frontend calls an external FastAPI backend directly at two endpoints: `POST /threads`
+(returns a UUID) and `POST /chat` (accepts `user_input` + `thread_id`, returns a plain-text
+streaming response). The backend base URL is read from the `NEXT_PUBLIC_BACKEND_URL` environment
+variable, falling back to `http://127.0.0.1:8000`. Conversation context is managed by the backend
+via the thread; the frontend sends only the current message and thread ID.
+
+**Rationale**: The backend is a separate project with its own concerns (provider credentials, persona
+instructions, rate limiting, conversation memory). Keeping a proxy route in the Next.js project
+duplicates responsibility and contradicts the stated goal of a frontend-only project. Direct calls
+to the FastAPI backend move all server-side logic to where it belongs.
+
+**Impact on existing architecture**:
+
+- **Removed**: `app/api/chat/route.ts`, `lib/server/*` (persona, groq, quota, validate, copy).
+  These modules move to the FastAPI project and are no longer this project's concern.
+- **Removed**: `@upstash/redis` dependency and related env vars (`GROQ_API_KEY`, `GROQ_BASE_URL`,
+  `GROQ_MODEL`, `DAILY_REQUEST_LIMIT`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`).
+- **Changed**: `useConversation.ts` — adds `threadId` state, fetches thread on mount, sends
+  `user_input` + `thread_id` to the external `/chat` endpoint, removes `outboundHistory` usage.
+- **Changed**: `limits.ts` — `outboundHistory()` and related exports become dead code and are
+  removed. `HISTORY_WINDOW` is no longer enforced client-side. `MAX_INPUT_CHARACTERS`, `isSendable`,
+  `clampInput`, `remainingCharacters`, and the `Message` type remain.
+- **Added**: `lib/conversation/backend.ts` — thin module exposing `createThread()` and `sendMessage()`
+  functions, encapsulating the backend URL resolution and fetch calls.
+- **Added**: `NEXT_PUBLIC_BACKEND_URL` env var; `lib/ui/copy.ts` gains a `backendUnavailable` string.
+- **Added**: A `'connecting'` status for the thread-creation phase on load (FR-045).
+- **Unchanged**: The emotion seam, the cue reader, the character layer, the presentation layer.
+  Plain text streaming format is identical to what the old route produced, so `createCueReader`
+  continues to work.
+
+**CORS**: The FastAPI backend is responsible for setting `Access-Control-Allow-Origin` and related
+headers. This project assumes CORS is configured correctly and does not proxy to avoid it.
+
+**Alternatives considered**:
+
+- Keep the API route as a thin proxy: contradicts the frontend-only goal, adds latency, and requires
+  maintaining server-side code that belongs in the backend project.
+- Use SSE or JSON streaming: unnecessary complexity when plain text chunks already work and the
+  `createCueReader` is built for them.
+
+---
+
+## D16. Chat overlay visual fidelity: gradient transition, blur reduction, and high-contrast typography
+
+**Decision**:
+1. Replace the uniform dark chat overlay with a top-to-bottom transparent-to-dark gradient (`bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)]`), removing `border-t border-[var(--border)]` and top `shadow-2xl`.
+2. Drop heavy backdrop blurring (`backdrop-blur-md`) from `ChatPanel.tsx`.
+3. Render primary dialogue and input text in pure white (`text-white`) with subtle text shadow (`drop-shadow-md` and `[text-shadow:_0_1px_2px_rgba(0,0,0,0.8)]`), and style message bubbles with translucent backgrounds (`bg-[var(--bubble-character)]/60`, `bg-[var(--bubble-visitor)]/85`).
+
+**Rationale**:
+- **Character Prominence & Lighting**: A uniform dark overlay over the bottom 50% cast an artificial cutoff and dark shadow over the character's midsection. A top-to-bottom gradient leaves the upper portion completely transparent, keeping the character's face, neck, and upper torso brightly lit and visible, smoothly darkening only in the lower section where dialogue and input controls reside.
+- **Physical Presence vs. Smearing**: Heavy backdrop blur (`backdrop-blur-md`) smeared the character's torso, clothing, and seated posture into abstract color blobs. Removing the blur keeps the character's outline and physical posture sharply discernible behind the chat overlay.
+- **Text Legibility over Artwork**: Rather than relying on heavy blur or opaque boxes to achieve contrast, primary text uses pure white (`text-white`) with drop shadow, guaranteeing legibility directly over the character artwork even if bright clothing or accessories sit behind the text. Translucent bubble backgrounds provide clear speaker separation while keeping the character model visible.
+- **Testing Verification**: E2E test `layout.spec.ts` updated transparency regex to match `rgba(0, 0, 0, 0)` (alpha 0 computed background color when using CSS linear gradients).
+
+---
+
 ## Residual risks
 
 | Risk | Impact | Mitigation |
@@ -288,10 +389,15 @@ replace the route handler without the conversation layer noticing. The repositor
 | Small model ignores the cue format | Neutral character, replies still readable | FR-019 fallback; SC-006 sets a 90% bar, not 100% |
 | Counter store missing at deploy | Unlimited provider spend | Quota check fails closed (D7) |
 | Groq retires the configured model id | Every reply fails | Model id is an environment value, not a constant (D5) |
+| Tailwind v4 breaking changes or plugin incompatibility | Build failure | Pin tailwindcss version; postcss.config.mjs is minimal |
+| FastAPI backend not running on localhost | Thread creation fails, chat disabled on load | FR-045: disable send and show connection notice; `NEXT_PUBLIC_BACKEND_URL` is configurable |
+| CORS misconfigured on the FastAPI backend | Browser blocks all requests | Backend responsibility; documented in quickstart and contract |
+| Thread UUID lost on page reload | New thread, no context carryover | By design: FR-024 says nothing persists across visits |
 
 ---
 
 **Sources consulted**: [pixi-live2d-display README](https://github.com/guansss/pixi-live2d-display/blob/master/README.md),
 [pixi-live2d-display on npm](https://www.npmjs.com/package/pixi-live2d-display),
 [Groq free tier overview](https://free-llm.com/provider/groq-cloud),
-[Groq pricing and limits](https://www.eesel.ai/blog/groq-pricing)
+[Groq pricing and limits](https://www.eesel.ai/blog/groq-pricing),
+[Next.js 16 CSS docs](node_modules/next/dist/docs/01-app/01-getting-started/11-css.md)

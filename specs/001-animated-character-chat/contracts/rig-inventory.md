@@ -1,6 +1,6 @@
 # Contract: Rig Capability Inventory
 
-**Satisfies**: FR-006, FR-007 - the emotional-state set must be *derived* from what the rig provides,
+**Satisfies**: FR-006, FR-007 - the emotional-state set must be _derived_ from what the rig provides,
 not chosen in advance.
 
 **Status**: Template. Filled in during implementation, before `lib/emotion.ts` is finalised. This
@@ -28,27 +28,42 @@ A candidate Cubism 4 sample model qualifies only if all of these hold:
 
 ## Inventory table - to be completed
 
-**Model**: `_______________` **Source**: `_______________` **License**: `_______________`
+**Model**: `Haru (ハル PRO版)` **Source**: `Live2D Official Sample Data (haru_ja)` **License**: `Live2D Free Material License Agreement (Original Character)`
 
 ### Motion groups
 
-| Group name (from `.model3.json`) | Count | Duration | Loops | Reads as | Candidate emotion |
-|----------------------------------|-------|----------|-------|----------|-------------------|
-| | | | | | |
+| Group name (from `.model3.json`) | Count | Duration  | Loops | Reads as                                    | Candidate emotion |
+| -------------------------------- | ----- | --------- | ----- | ------------------------------------------- | ----------------- |
+| `Idle`                           | 3     | 10.0s     | Yes   | Natural breathing and subtle gentle sway    | `neutral`         |
+| `Tap`                            | 6     | 1.4s–3.1s | No*   | Attentive nodding / casual response gesture | `neutral`         |
+| `Flick`                          | 3     | 2.6s–3.0s | No*   | Cheerful head tilt, bright gesture          | `happy`           |
+| `FlickRight`                     | 3     | 2.1s–4.2s | No*   | Hesitant glance away, bashful / embarrassed | `shy`             |
+| `FlickLeft`                      | 3     | 2.6s–4.2s | No*   | Startled turn, abrupt wide-eyed reaction    | `surprised`       |
+| `Shake`                          | 2     | 2.0s–3.7s | No*   | Irritated body shake, frustrated reaction   | `angry`           |
+| `Flick3`                         | 3     | 1.6s–2.0s | No*   | Drooping posture, dejected downward tilt    | `sad`             |
+
+_\*Note: Motion metadata sets `Loop: true` by default, but the project triggers them as one-shot reaction motions that return to the `Idle` loop._
 
 ### Expressions
 
-| Expression name (`.exp3.json`) | Reads as | Candidate emotion |
-|--------------------------------|----------|-------------------|
-| | | |
+| Expression name (`.exp3.json`) | Reads as                                                 | Candidate emotion |
+| ------------------------------ | -------------------------------------------------------- | ----------------- |
+| `Normal.exp3.json`             | Neutral, calm resting baseline expression                | `neutral`         |
+| `Smile.exp3.json`              | Smiling curved eyes (`PARAM_EYE_SMILE=1`), raised brows  | `happy`           |
+| `Sad.exp3.json`                | Troubled angled eyebrows, downturned mouth               | `sad`             |
+| `Surprised.exp3.json`          | Wide pupils (`PARAM_EYE_OPEN=1`), high raised brows      | `surprised`       |
+| `Angry.exp3.json`              | Furrowed brows (`PARAM_BROW_ANGLE=-0.5`), clenched mouth | `angry`           |
+| `Blushing.exp3.json`           | Blushed cheeks (`PARAM_TERE=1`), softened gaze           | `shy`             |
+
+_(Note: `f01.exp3.json` and `f02.exp3.json` are redundant minor variations and are omitted per the inventory rules)._
 
 ### Other capabilities present
 
-- [ ] Physics file
-- [ ] Pose file
-- [ ] Eye blink parameter group
-- [ ] Breath parameters
-- [ ] Lip-sync parameters (unused - text-only demo, FR-033)
+- [x] Physics file (`haru.physics3.json`)
+- [x] Pose file (`haru.pose3.json`)
+- [x] Eye blink parameter group (`PARAM_EYE_L_OPEN`, `PARAM_EYE_R_OPEN`)
+- [ ] Breath parameters _(handled via motion curves)_
+- [x] Lip-sync parameters (unused - text-only demo, FR-033) (`PARAM_MOUTH_OPEN_Y`)
 
 ## Output of this inventory
 

@@ -2,7 +2,7 @@
 
 **Module**: `lib/character/renderer.ts` - imperative, framework-agnostic, no React, no chat.
 
-**Satisfies**: FR-005, FR-008 to FR-014, FR-035, FR-038, SC-002, SC-003
+**Satisfies**: FR-005, FR-008 to FR-014, FR-035, FR-038, FR-042, SC-002, SC-003
 
 ---
 
@@ -50,6 +50,7 @@ emotion back and no chat state; the renderer still cannot talk to `lib/conversat
 | R10 | With `reducedMotion: true`, no motion starts, and idle motion, breath, physics, and blink are all suppressed; `setEmotion` applies the expression by cross-fade only | FR-014, D9 |
 | R11 | Model or WebGL failure calls `onUnavailable` exactly once and never throws into the caller | FR-012 |
 | R12 | No work on the render path exceeds one frame budget; nothing blocks the UI thread | Constitution IV |
+| R13 | The model is fully visible head-to-toe within the canvas at all times; when the container is smaller than the model's native size, the model is scaled down to fit entirely rather than cropped | FR-042 |
 
 ## Load-order requirement
 
@@ -76,3 +77,5 @@ Stated so nobody adds them later thinking they were forgotten:
   consecutive frames, while `setEmotion` still changes the expression (R10).
 - A deliberately broken `modelUrl` calls `onUnavailable` once and the chat panel remains fully usable
   (R11).
+- After `createCharacter` and after `resize()`, the model's rendered bounds are contained entirely
+  within the canvas dimensions — no part extends beyond the canvas boundary (R13).

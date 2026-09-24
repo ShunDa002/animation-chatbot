@@ -1,36 +1,49 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import StillCharacter from '@/components/StillCharacter';
 import { copy } from '@/lib/ui/copy';
-import { EMOTION_LABELS } from '@/lib/character/labels';
 import type { Emotion } from '@/lib/emotion';
+
+const CharacterStage = dynamic(() => import('@/components/CharacterStage'), {
+  ssr: false,
+  loading: () => <StillCharacter emotion="neutral" label="calm" />,
+});
 
 interface Props {
   /** The one value that crosses the seam (FR-020). */
   emotion: Emotion;
-  /** The second and last item of seam vocabulary. */
+  /** The second and last item of seam vocabulary (FR-010, FR-020). */
   thinking: boolean;
+  modelUrl?: string;
+  className?: string;
 }
 
 /**
- * The character area.
+ * The character area presentation wrapper (FR-001).
  *
- * This is the presentation wrapper: it decides whether the animated renderer or the still image is on
- * screen, and it carries the text description of the character's current state (FR-038).
- *
- * It currently renders the still image unconditionally, because the animated renderer needs a
- * vendored Cubism model that is a license-gated manual download (tasks T010 to T012). The seam is
- * unaffected by that: this component receives one Emotion and one boolean and nothing else, so
- * swapping the still image for the renderer changes this file and lib/character/** only, which is
- * exactly the replaceability SC-012 asks to be demonstrable.
+ * Renders:
+ * - Animated CharacterStage via next/dynamic (ssr: false) with fallback to StillCharacter (FR-012)
+ * - Full-screen height with corresponding width, centered in screen width
  */
-export default function CharacterArea({ emotion, thinking }: Props) {
-  const label = thinking ? 'thoughtful' : EMOTION_LABELS[emotion];
-
+export default function CharacterArea({
+  emotion,
+  thinking,
+  modelUrl,
+  className = '',
+}: Props) {
   return (
-    <section className="character-area" aria-label="Character" data-thinking={thinking}>
-      <StillCharacter emotion={emotion} label={label} />
-      {thinking ? <p className="character-status">{copy.waiting}</p> : null}
+    <section
+      className={`character-area relative flex items-center justify-center w-full h-full overflow-hidden bg-transparent ${className}`}
+      aria-label="Character"
+      data-thinking={thinking}
+    >
+      <CharacterStage emotion={emotion} thinking={thinking} modelUrl={modelUrl} />
+      {thinking ? (
+        <p className="character-status absolute top-16 left-4 sm:top-4 sm:left-4 text-xs text-[var(--text-muted)] m-0 z-10 bg-[var(--surface)]/70 backdrop-blur-xs px-2.5 py-1 rounded-md border border-[var(--border)]/50">
+          {copy.waiting}
+        </p>
+      ) : null}
     </section>
   );
 }

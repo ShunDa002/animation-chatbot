@@ -6,14 +6,16 @@
 
 ## Summary
 
-A single-page portfolio demo: a rigged 2D character animates beside a chat panel, the visitor types,
+A single-page portfolio demo: a rigged 2D character animates above a chat panel, the visitor types,
 a language model replies as streaming text, and the character reacts with a matching animation and
 expression. No accounts, no persistence, free-tier inference.
 
-The approach is a single Next.js project on Vercel holding both the page and one proxy route
-handler, so the provider credential stays server-side with no second origin. The character is
-rendered by `pixi-live2d-display` over PixiJS v7, with the Cubism 4 Core runtime and a free sample
-model vendored as static assets. The proxy forwards one OpenAI-shaped streaming call to Groq.
+This project is **frontend-only** (D15). The character is rendered by `pixi-live2d-display` over
+PixiJS v7, with the Cubism 4 Core runtime and a free sample model vendored as static assets. A
+separate FastAPI backend project handles provider credentials, persona instructions, rate limiting,
+and conversation context. The frontend communicates with it via two HTTP endpoints: `POST /threads`
+(returns a thread UUID on page load) and `POST /chat` (accepts `user_input` + `thread_id`, returns
+a plain-text streaming response).
 
 The load-bearing design decision is the seam: the conversation layer hands the character exactly one
 value - an `Emotion` - and nothing else. That vocabulary is declared in a single shared module that
@@ -26,20 +28,25 @@ the seam contract is [contracts/emotion-seam.md](./contracts/emotion-seam.md).
 **Language/Version**: TypeScript 5.x in `strict` mode, targeting Node 20+ for tooling
 
 **Primary Dependencies**: Next.js (App Router) - `react` / `react-dom` - `pixi.js` pinned to the v7
-line - `pixi-live2d-display` (cubism4 entry point) - `@upstash/redis` for the daily counter.
+line - `pixi-live2d-display` (cubism4 entry point). No server-side dependencies (`@upstash/redis`
+removed per D15).
 Vendored, not from npm: Cubism 4 Core (`live2dcubismcore.min.js`) and one Cubism 4 sample model.
 
+**Styling**: Tailwind CSS v4 via `@tailwindcss/postcss` (D13). Utility classes in JSX for all
+layout, spacing, colour, and typography. `globals.css` retains only the Tailwind import, CSS custom
+properties for animation tokens, and the `prefers-reduced-motion` media query.
+
 **Storage**: No database. Conversation history lives in browser memory for the visit only (FR-024).
-The single exception is one integer per day in Upstash Redis for the global request ceiling - no
-visitor data, TTL-expiring (see D7 in research, and Complexity Tracking below).
+The thread UUID is stored in React state for the visit only. All server-side storage (daily counter,
+conversation context) is the external backend's responsibility (D15).
 
 **Testing**: Vitest + React Testing Library (unit, component); Playwright headless Chromium
 (integration, end-to-end). Provider intercepted at the HTTP boundary; clock injected.
 
 **Target Platform**: Modern desktop browsers with hardware-accelerated WebGL; narrow viewports
-usable but not primary. Server side runs on Vercel's Edge runtime.
+usable but not primary. No server-side runtime required in this project (D15).
 
-**Project Type**: Web application - single deployable Next.js project (page + one API route).
+**Project Type**: Web application - frontend-only Next.js project (no API routes).
 
 **Performance Goals**: 60fps sustained character animation, never below 30fps (SC-003); visible
 feedback to a send within 100ms (SC-004); first reply words within 3s for 90% of turns (SC-005);
@@ -48,7 +55,8 @@ character visible and animating within 3s of page load (SC-002).
 **Constraints**: Provider credential never reaches the browser (FR-025); 300-character input cap,
 6-message history window, 150 requests/day global ceiling (FR-017, FR-022, FR-028); 20-second
 provider timeout with no automatic retry (FR-034); reduced-motion honoured before the first frame
-(FR-035); emotion vocabulary is the only cross-seam traffic (FR-020).
+(FR-035); emotion vocabulary is the only cross-seam traffic (FR-020); character model must be fully
+visible head-to-toe at all times, scaled down to fit its container rather than cropped (FR-042).
 
 **Scale/Scope**: Low, bursty portfolio traffic. One character, one conversation per visit, one API
 route, 4-8 emotional states. Roughly 20 source files.
@@ -110,12 +118,36 @@ a visit; the contracts add no provider detail to the browser surface; the access
 reduced-motion requirements are expressed as testable behaviour rather than as intentions. With the
 language clause amended, no gate fails and no blocking item remains.
 
+D13 (Tailwind) and D14 (layout) introduce no new principle violations: Tailwind is declared in
+`package.json` (not ad hoc), the single-source-of-truth requirement is met through Tailwind's theme
+plus `lib/ui/tokens.ts`. The UI components are purely presentational with no
+cross-seam imports.
+
 A `/speckit-analyze` pass over spec, plan, and tasks found zero CRITICAL issues. Its five HIGH
 findings were remediated in `tasks.md` and in this file: the waiting indicator and the failure and
 limit announcements moved from US4 back to US2 where their failure paths live, a scripted-provider
 fixture task was added as T007a, counter atomicity under concurrent load gained a test (T039a) and an
 implementation constraint (T046), and constitution III's in-progress-input guarantee was added to
 T053 and T043.
+
+**2026-09-15 — FR-042 layout bug fix**: A `/speckit-clarify` session identified that the spec did
+not define what "visible" means for the character model. The clarification established that the full
+body must be visible at all times — scaled down to fit rather than cropped. This resolved a live bug
+where `layoutModel()` in `renderer.ts` used `anchor(0.5, 0)` with `y=0`, pushing the model's head
+and face above the canvas boundary. The renderer contract gains a new guarantee R13 (FR-042), and
+the fix changes anchor, position, and scale logic. No principle violations.
+
+**2026-09-20 — D15 external backend migration**: The `/speckit-clarify` session established that
+this project is frontend-only. The API route (`app/api/chat/route.ts`) and the entire `lib/server/`
+layer are removed; the frontend calls an external FastAPI backend directly. No new principle
+violations:
+- **I**: `backend.ts` is a thin fetch wrapper with a single responsibility. The `@upstash/redis`
+  dependency is removed (fewer deps, not more).
+- **II**: The backend module is testable via scripted fixtures; the cue reader is unchanged.
+- **III**: A new `'connecting'` status and `backendUnavailable` copy string ensure the thread-
+  creation failure path has visible feedback (FR-045).
+- **IV**: No performance change — the streaming path is identical; one extra round trip on page
+  load (thread creation) is offset by removing the same-origin proxy hop.
 
 ## Project Structure
 
@@ -142,17 +174,14 @@ specs/001-animated-character-chat/
 ```text
 app/
 ├── layout.tsx                  # Root layout; Cubism Core via next/script beforeInteractive
-├── page.tsx                    # The single view: character stage + chat panel
-├── globals.css                 # Reset, layout, reduced-motion media query
-└── api/
-    └── chat/
-        └── route.ts            # Edge runtime; the only server-side code
+├── page.tsx                    # Sidebar + full-screen character area + 50% bottom chat overlay (D14)
+└── globals.css                 # Tailwind import, CSS custom properties, reduced-motion query (D13)
 
 components/
 ├── CharacterStage.tsx          # Client-only wrapper; owns mount/destroy of the renderer
 ├── StillCharacter.tsx          # Fallback still image (FR-012)
-├── ChatPanel.tsx               # Composes log + input + status
-├── MessageLog.tsx              # Scrolling log, newest in view (FR-002)
+├── ChatPanel.tsx               # Composes log + input + status + thinking indicator
+├── MessageLog.tsx              # Scrolling log, newest in view, character icon on character msgs (FR-002)
 ├── MessageInput.tsx            # 300-char cap, remaining count, send control (FR-022)
 └── Announcer.tsx               # Polite live region (FR-036, FR-037)
 
@@ -163,39 +192,39 @@ lib/
 │   ├── emotionMap.ts           # Emotion -> motion group + expression (from rig inventory)
 │   └── reducedMotion.ts        # Preference read + still-mode parameter suppression
 ├── conversation/               # Knows nothing about rendering.
-│   ├── useConversation.ts      # History, send, stream read, one-in-flight guard
+│   ├── useConversation.ts      # Thread lifecycle, send, stream read, one-in-flight guard (D15)
+│   ├── backend.ts              # createThread() + sendMessage() — backend URL resolution (D15)
 │   ├── cue.ts                  # Marker parse + tail-buffered stripping (D6)
-│   └── limits.ts               # 300 chars, 6-message window
-├── server/
-│   ├── persona.ts              # System prompt incl. cue instruction (server-only)
-│   ├── groq.ts                 # One forwarded streaming call
-│   ├── quota.ts                # Daily counter; atomic INCR; fails closed
-│   ├── copy.ts                 # The four failure sentences the endpoint returns (FR-030)
-│   └── validate.ts             # Request shape validation (FR-029)
+│   └── limits.ts               # 300 chars, Message type (outboundHistory removed per D15)
 └── ui/
     ├── tokens.ts               # Durations, easing, colours, spacing
-    └── copy.ts                 # Visitor-facing failure and limit wording
+    └── copy.ts                 # Visitor-facing failure, limit, and connection wording
+
+postcss.config.mjs              # @tailwindcss/postcss plugin (D13)
 
 public/live2d/
 ├── core/live2dcubismcore.min.js        # Vendored from the official SDK
 └── model/                              # Vendored sample rig + LICENSE.txt
 
 tests/
-├── unit/                       # cue.ts, limits.ts, emotion.ts, emotionMap.ts, quota.ts
+├── unit/                       # cue.ts, limits.ts, emotion.ts, emotionMap.ts, backend.ts
 ├── component/                  # MessageInput, MessageLog, Announcer (Vitest + RTL)
-├── fixtures/                   # Scripted provider streams - the provider is never real in the suite
+├── fixtures/                   # Scripted backend responses — the backend is never real in the suite
 └── e2e/                        # Playwright: full turn, failures, timeout, reduced motion
 ```
 
-**Structure Decision**: One Next.js App Router project at the repository root. The four concerns from
-the spec map to four directories that do not import each other: `components/` (presentation),
-`lib/character/` (rendering), `lib/conversation/` (conversation), `lib/server/` (proxy).
+**Structure Decision**: One Next.js App Router project at the repository root. This project is
+frontend-only (D15). The three remaining concerns map to three directories: `components/`
+(presentation), `lib/character/` (rendering), `lib/conversation/` (conversation + backend calls).
 `lib/emotion.ts` sits above all of them and imports nothing, which is what physically enforces the
-seam - `lib/character/` may not import from `lib/conversation/` or vice versa, and a lint boundary
+seam — `lib/character/` may not import from `lib/conversation/` or vice versa, and a lint boundary
 rule makes that a build failure rather than a code-review reminder.
 
-`app/api/chat/route.ts` is the only server-side code, and `lib/server/` is imported by nothing else,
-so the persona text and the API key have no path into the client bundle.
+The `lib/server/` directory and `app/api/chat/route.ts` have been removed (D15). All server-side
+concerns — provider credentials, persona instructions, rate limiting, request validation, and
+conversation context — are the responsibility of the separate FastAPI backend project.
+
+**Layout Decision** (D14, D16): The page uses a full-screen character display with a collapsible sidebar on the left for navigation and history (mocked with dummy data). The chat panel overlays the bottom 50% of the character area with a top-to-bottom transparent-to-dark gradient (`bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)]`) without heavy backdrop blur or top borders (D16, FR-001). This keeps the character's face, neck, and upper torso brightly lit and visible, while leaving the dark clothing, torso, and seated posture sharply discernible behind the chat overlay. Dialogue and input text use pure white (`text-white`) with subtle drop shadows against translucent bubble containers for maximum contrast without obscuring the artwork (FR-002). The thinking indicator is displayed as a temporary message bubble inside the chat panel (FR-040). On mobile viewports (< 640px), the sidebar becomes an off-canvas drawer accessed via a menu button, while the chat overlay remains at the bottom 50% (FR-003).
 
 ## Complexity Tracking
 
@@ -203,6 +232,7 @@ so the persona text and the API key have no path into the client bundle.
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| A datastore (Upstash Redis) despite the project's stated "no database" | FR-028 requires the daily count to hold across separate server invocations. Vercel functions are stateless and horizontally scaled | A module-level in-memory counter allows 150 requests *per warm instance*, so the ceiling silently stops existing and SC-013 cannot be verified. It is a correctness failure, not a simplification. Scope is one integer per UTC day with a TTL - no visitor data, no identifier |
+| ~~A datastore (Upstash Redis) despite the project's stated "no database"~~ — **removed D15** | No longer applies. The daily counter is the external backend's responsibility | N/A |
 | A rendering library rather than direct WebGL | FR-005 to FR-009 need motion groups, expression switching, motion priority, and idle looping | The vendor's low-level framework requires hand-written WebGL and matrix maths - several hundred lines before the first frame - and every line of it would be project-owned code to test and maintain under Principle I |
 | ~~Constitution language clause conflict~~ - **resolved 2026-08-31** | The stack is TypeScript; constitution v1.0.0 named Python | Not an alternative to reject but an amendment to make. Made: constitution v1.1.0 redefines the clause as TypeScript on Node with `package.json`. No longer an open item |
+| Direct cross-origin fetch to an external backend | D15: the backend is a separate FastAPI project; no in-project proxy | A Next.js API route proxy would contradict the frontend-only goal and duplicate server-side code that belongs in the backend project |

@@ -115,7 +115,10 @@ test.describe('V2: a full turn', () => {
   test('history travels onward, bounded to six messages (FR-017)', async ({ page, request }) => {
     for (let i = 0; i < 4; i += 1) {
       await send(page, `message number ${i}`);
-      await expect(characterBubbles(page)).toHaveCount(i + 1);
+      await expect(characterBubbles(page)).toHaveCount(i + 1, { timeout: 10_000 });
+      await expect(characterBubbles(page).nth(i)).toHaveAttribute('data-status', 'complete', {
+        timeout: 10_000,
+      });
     }
 
     // Every turn is still visible in the log, even though only six messages travel.

@@ -3,12 +3,15 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * T016 - a second net under the lint rule in eslint.config.mjs.
+ * T016 & T113 - boundary checks.
  *
  * The lint rule is the primary enforcement, but a lint config is one `// eslint-disable` away from
  * being advisory. This test reads the source and cannot be silenced from inside the file it judges.
  *
- * The allow/forbid table is contracts/emotion-seam.md's, verbatim.
+ * Checks:
+ * 1. The emotion seam between lib/character and lib/conversation holds (contracts/emotion-seam.md)
+ * 2. lib/emotion.ts imports nothing at all (rule 4)
+ * 3. No file in lib/conversation imports from app/api (D15 frontend-only guard)
  */
 
 const ROOT = join(import.meta.dirname, '..', '..');
@@ -53,17 +56,12 @@ const LAYERS: Layer[] = [
   {
     name: 'lib/character',
     dir: join(ROOT, 'lib', 'character'),
-    forbidden: [/lib\/conversation/, /lib\/server/, /\.\.\/conversation/, /\.\.\/server/],
+    forbidden: [/lib\/conversation/, /\.\.\/conversation/],
   },
   {
     name: 'lib/conversation',
     dir: join(ROOT, 'lib', 'conversation'),
-    forbidden: [/lib\/character/, /lib\/server/, /\.\.\/character/, /\.\.\/server/],
-  },
-  {
-    name: 'lib/server',
-    dir: join(ROOT, 'lib', 'server'),
-    forbidden: [/lib\/character/, /lib\/conversation/, /components\//, /lib\/ui/],
+    forbidden: [/lib\/character/, /\.\.\/character/],
   },
 ];
 
@@ -85,15 +83,13 @@ describe('the emotion seam holds', () => {
     expect(specifiers, `lib/emotion.ts must have no dependencies, found: ${specifiers}`).toEqual([]);
   });
 
-  it('lib/server is imported only by the route handler, keeping the key out of the client bundle', () => {
-    const clientDirs = [join(ROOT, 'components'), join(ROOT, 'lib', 'conversation')];
+  it('no file under lib/conversation imports from app/api (D15 frontend-only guard)', () => {
+    const dir = join(ROOT, 'lib', 'conversation');
     const offences: string[] = [];
-    for (const dir of clientDirs) {
-      for (const file of sourceFiles(dir)) {
-        for (const specifier of importsOf(file)) {
-          if (/lib\/server/.test(specifier)) {
-            offences.push(`${file.replace(ROOT, '')} imports ${specifier}`);
-          }
+    for (const file of sourceFiles(dir)) {
+      for (const specifier of importsOf(file)) {
+        if (/app\/api|\/api\//.test(specifier)) {
+          offences.push(`${file.replace(ROOT, '')} imports ${specifier}`);
         }
       }
     }

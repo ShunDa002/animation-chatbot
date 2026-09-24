@@ -4,13 +4,30 @@ import userEvent from '@testing-library/user-event';
 import MessageInput from '@/components/MessageInput';
 import MessageLog from '@/components/MessageLog';
 import Announcer from '@/components/Announcer';
+import ChatPanel from '@/components/ChatPanel';
 import { copy } from '@/lib/ui/copy';
 import type { Message } from '@/lib/conversation/limits';
+import type { Conversation } from '@/lib/conversation/useConversation';
+import { NEUTRAL } from '@/lib/emotion';
 
-// T043. Behaviour, not internals: what the visitor sees and what a screen reader is told.
+// T043 & T116. Behaviour, not internals: what the visitor sees and what a screen reader is told.
 
 function message(partial: Partial<Message> & Pick<Message, 'author' | 'text'>): Message {
   return { id: partial.text.slice(0, 10), status: 'complete', ...partial };
+}
+
+function mockConversation(overrides: Partial<Conversation> = {}): Conversation {
+  return {
+    messages: [],
+    status: 'idle',
+    threadId: 'test-thread-uuid',
+    emotion: NEUTRAL,
+    inFlight: false,
+    notice: null,
+    announcement: null,
+    send: vi.fn(),
+    ...overrides,
+  };
 }
 
 describe('MessageInput', () => {
@@ -75,6 +92,12 @@ describe('MessageInput', () => {
     expect(screen.getByRole('button', { name: copy.sendLabel })).toHaveProperty('disabled', true);
   });
 
+  it('disables sending and displays connecting notice during connecting status (FR-045)', () => {
+    render(<MessageInput onSend={vi.fn()} disabled={false} status="connecting" />);
+    expect(screen.getByText(copy.connecting)).toBeTruthy();
+    expect(screen.getByRole('button', { name: copy.sendLabel })).toHaveProperty('disabled', true);
+  });
+
   it('keeps unsent input across a re-render (constitution III)', async () => {
     const { rerender } = render(<MessageInput onSend={vi.fn()} disabled={false} />);
     await userEvent.type(screen.getByRole('textbox'), 'half a thought');
@@ -88,6 +111,61 @@ describe('MessageInput', () => {
   it('labels its control for a screen reader (FR-003)', () => {
     render(<MessageInput onSend={vi.fn()} disabled={false} />);
     expect(screen.getByLabelText(copy.inputLabel)).toBeTruthy();
+  });
+});
+
+describe('ChatPanel (FR-045)', () => {
+  it('shows connecting indicator and disables send during connecting status', () => {
+    render(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'connecting',
+          threadId: null,
+        })}
+      />,
+    );
+
+    expect(screen.getAllByText(copy.connecting).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: copy.sendLabel })).toHaveProperty('disabled', true);
+  });
+
+  it('transitions from connecting to idle enabling the send button', async () => {
+    const { rerender } = render(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'connecting',
+          threadId: null,
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: copy.sendLabel })).toHaveProperty('disabled', true);
+
+    rerender(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'idle',
+          threadId: 'uuid-1234',
+        })}
+      />,
+    );
+
+    await userEvent.type(screen.getByRole('textbox'), 'Hello');
+    expect(screen.getByRole('button', { name: copy.sendLabel })).toHaveProperty('disabled', false);
+  });
+
+  it('displays thinking dots in MessageLog when status is waiting (FR-040)', () => {
+    render(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'waiting',
+          inFlight: true,
+          threadId: 'uuid-1234',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('thinking-dots')).toBeTruthy();
   });
 });
 
@@ -121,12 +199,107 @@ describe('MessageLog', () => {
     render(<MessageLog messages={[]} />);
     expect(screen.getByRole('log')).toBeTruthy();
   });
+
+  it('renders character icon beside character messages and not visitor messages (FR-002)', () => {
+    const { container } = render(
+      <MessageLog
+        messages={[
+          message({ author: 'visitor', text: 'mine' }),
+          message({ author: 'character', text: 'hers' }),
+        ]}
+      />,
+    );
+
+    const icons = container.querySelectorAll('[data-testid="character-icon"]');
+    expect(icons.length).toBe(1);
+
+    const hers = screen.getByText(/hers/).closest('.message');
+    expect(hers?.parentElement?.querySelector('[data-testid="character-icon"]')).toBeTruthy();
+
+    const mine = screen.getByText(/mine/).closest('.message');
+    expect(mine?.parentElement?.querySelector('[data-testid="character-icon"]')).toBeNull();
+  });
+
+  it('aligns visitor messages right and character messages left with flex-1 right edge', () => {
+    render(
+      <MessageLog
+        messages={[
+          message({ author: 'visitor', text: 'mine' }),
+          message({ author: 'character', text: 'hers' }),
+        ]}
+      />,
+    );
+
+    const mineWrapper = screen.getByText(/mine/).closest('.message')?.parentElement;
+    expect(mineWrapper?.className).toContain('justify-end');
+
+    const hersBubble = screen.getByText(/hers/).closest('.message');
+    expect(hersBubble?.className).toContain('flex-1');
+  });
+
+  it('renders a temporary thinking bubble with thinking dots when status === "waiting" (FR-040)', () => {
+    render(
+      <MessageLog
+        messages={[message({ author: 'visitor', text: 'hello' })]}
+        status="waiting"
+      />,
+    );
+
+    expect(screen.getByTestId('thinking-bubble')).toBeTruthy();
+    expect(screen.getByTestId('thinking-dots')).toBeTruthy();
+    expect(screen.getByRole('status', { name: /thinking/i })).toBeTruthy();
+    expect(screen.getByText('Aria')).toBeTruthy();
+
+    const bubble = screen.getByTestId('thinking-bubble');
+    expect(bubble.querySelector('[data-testid="character-icon"]')).toBeTruthy();
+  });
+
+  it('does not render thinking bubble when status is idle, streaming, or error (FR-040)', () => {
+    const { rerender } = render(
+      <MessageLog
+        messages={[message({ author: 'visitor', text: 'hello' })]}
+        status="idle"
+      />,
+    );
+    expect(screen.queryByTestId('thinking-bubble')).toBeNull();
+
+    rerender(
+      <MessageLog
+        messages={[message({ author: 'visitor', text: 'hello' })]}
+        status="streaming"
+      />,
+    );
+    expect(screen.queryByTestId('thinking-bubble')).toBeNull();
+
+    rerender(
+      <MessageLog
+        messages={[message({ author: 'visitor', text: 'hello' })]}
+        status="error"
+      />,
+    );
+    expect(screen.queryByTestId('thinking-bubble')).toBeNull();
+  });
+
+  it('thinking dots animation respects prefers-reduced-motion (FR-014)', () => {
+    render(<MessageLog messages={[]} status="waiting" />);
+
+    const dots = screen.getByTestId('thinking-dots').querySelectorAll('span');
+    expect(dots.length).toBe(3);
+    dots.forEach((dot) => {
+      expect(dot.className).toContain('motion-reduce:animate-none');
+    });
+  });
 });
 
 describe('Announcer (FR-036, FR-037)', () => {
   it('says nothing at rest', () => {
     render(<Announcer status="idle" announcement={null} notice={null} />);
     expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  it('announces the connecting state during initial thread creation (FR-045)', () => {
+    render(<Announcer status="connecting" announcement={null} notice={null} />);
+    expect(screen.getByRole('status').textContent).toBe(copy.connecting);
   });
 
   it('announces the thinking state when the wait begins', () => {

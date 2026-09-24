@@ -93,7 +93,7 @@ async function handleCompletions(req: IncomingMessage, res: ServerResponse): Pro
   res.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache',
-    connection: 'keep-alive',
+    connection: 'close',
   });
 
   if (script.delayFirstMs) await sleep(script.delayFirstMs);

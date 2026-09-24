@@ -9,15 +9,25 @@
 **Input**: User description: single-page web app where an animated 2D character sits beside a chat
 panel; the visitor types, a language model replies, the reply appears as text, and the character
 reacts with a matching animation. Text-only, no voice. Public portfolio demo, free-tier inference,
-no accounts, no stored data. Four deliberately separated concerns: presentation (character canvas,
+no accounts, no stored data. Three concerns in this project: presentation (character canvas,
 message log, input box); character rendering (an imperative 60fps render loop over a rigged model,
-knowing nothing about chat); conversation (turn history, sending it away, receiving a reply,
-extracting the emotional cue); and an inference proxy as the only server-side piece (holds the API
-key, attaches the persona prompt, forwards to the provider). The design rests on the seam between
+knowing nothing about chat); and conversation (turn management, sending input to the backend,
+receiving a streaming reply, extracting the emotional cue). A separate FastAPI backend project
+handles inference, credentials, persona, rate limiting, and conversation context. The design rests
+on the seam between
 character rendering and conversation: conversation hands the character a single emotion value and
 nothing else — that is the entire vocabulary between them, so either side is replaceable.
 
 ## Clarifications
+
+### Session 2026-09-24
+
+- Q: The requested sidebar includes a "list of old conversations", but the current spec explicitly states conversations are not persisted across visits. Should we introduce browser-local storage? → A: For now, create a list of dummy conversations with unique IDs and simple content.
+- Q: On mobile viewports (< 640px), how should the layout adapt given the new sidebar and overlay structure? → A: The sidebar is hidden in an off-canvas drawer (accessed via a hamburger menu), and the chat overlay covers the bottom 50% of the screen.
+- Q: Rather than a uniform overlay, how should the bottom 50% chat overlay transition over the character? → A: Replace uniform background with a top-to-bottom gradient (`bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)]`) without heavy backdrop blurring (`backdrop-blur-md`) or top borders, keeping the character's face, neck, and upper torso brightly lit and visible, and deepening darkness only in the lower section behind dialogue and UI controls.
+- Q: How should text readability be ensured against the character background artwork? → A: Primary dialogue and input text MUST be pure white (`text-white`) with subtle text shadow (`drop-shadow-md` and text shadow) to contrast directly against the background artwork and prevent washing out if the character behind the panel has bright clothing or accessories; message bubbles should feature translucent backgrounds so the character silhouette remains discernible behind the text while distinguishing speakers.
+- Q: The speech bubble is being removed from the UI. Where should the typing/thinking indicator be displayed while the character is preparing a reply? → A: Display it as a temporary message bubble inside the chat panel.
+- Q: Should the speech bubble and its relevant components be completely removed from the current UI? → A: Yes, remove the speech bubble entirely and only display the conversation messages inside the chat panel.
 
 ### Session 2026-08-31
 
@@ -38,7 +48,43 @@ nothing else — that is the entire vocabulary between them, so either side is r
   state when the wait begins, and give the character area a text description naming its current
   emotional state.
 
-## User Scenarios & Testing *(mandatory)*
+### Session 2026-09-13
+
+- Q: On narrow viewports where both sections cannot fit comfortably, should the character display
+  area collapse or shrink to prioritize the chat panel? → A: Character area shrinks proportionally;
+  both sections always remain visible.
+- Q: Should character messages in the chat panel include a small character icon/avatar beside them,
+  and how should messages be aligned? → A: Character messages left-aligned with a character icon;
+  visitor messages right-aligned. Both message types share the same right edge.
+### Session 2026-09-15
+
+- Q: When the spec says the character must be "visible" (US1-AC1, SC-002, FR-003), what part of the
+  character model must be shown — should the full body always be in view, or is a head-and-shoulders
+  framing acceptable as the container shrinks? → A: Full body must always be visible — scale down as
+  needed to fit entirely within the display area rather than cropping any part.
+
+### Session 2026-09-20
+
+- Q: When sending a message to the backend chat API, should the client send bounded conversation
+  history alongside the message, or send only the user input and thread ID — relying on the backend
+  to manage conversation context via the thread? → A: Send only `user_input` and `thread_id`; the
+  backend tracks conversation context via the thread. The frontend and backend are completely
+  separate projects; this project is frontend-only, and the backend is a separate FastAPI application.
+- Q: When thread creation fails on page load (backend unreachable, network error, non-200 response),
+  should the chat panel be disabled or should the visitor discover the error only when trying to
+  send? → A: Disable sending and show a connection notice in the chat panel until thread creation
+  succeeds.
+- Q: How does the FastAPI backend stream the reply — plain text chunks, Server-Sent Events, or
+  newline-delimited JSON? → A: Plain text streaming. The backend streams raw text chunks containing
+  the reply and trailing emotional cue, matching the existing `createCueReader` parsing approach.
+- Q: Should the existing Next.js `/api/chat` route be removed or kept as a pass-through proxy to
+  the FastAPI backend? → A: Remove it entirely. The frontend calls the FastAPI backend directly;
+  CORS is the backend’s responsibility.
+- Q: Should the backend base URL be configured via a Next.js environment variable or hard-coded in
+  a constants file? → A: Use `NEXT_PUBLIC_BACKEND_URL` environment variable with
+  `http://127.0.0.1:8000` as the default fallback.
+
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Character feels alive on arrival (Priority: P1)
 
@@ -179,9 +225,10 @@ a distinct, visibly different state during the wait and leaves it when text begi
   until the next reset — an accepted tradeoff of having no visitor identity.
 - **Extremely long visitor message**: input stops at 300 characters, and the remaining allowance is
   visible before sending rather than the send failing.
-- **Very long conversation in one visit**: only the 6 most recent messages travel onward, so replies
-  keep arriving and cost per request stays flat. The visitor sees no failure, but the character will
-  not recall turns older than that window — expected behaviour, not a defect.
+- **Very long conversation in one visit**: the backend manages conversation context via the thread
+  and bounds it server-side, so replies keep arriving and cost per request stays flat. The visitor
+  sees no failure, but the character will not recall very old turns — expected behaviour, not a
+  defect.
 - **Visitor navigates away or reloads mid-reply**: the in-flight reply is abandoned cleanly and no
   further work is charged to the demo's allowance.
 - **Announcement collides with a new send**: if the visitor sends again immediately after a reply
@@ -193,19 +240,26 @@ a distinct, visibly different state during the wait and leaves it when text begi
   state appears as its still expression, cross-faded in. The character never moves, yet still visibly
   responds to what it said, and the conversation is unaffected.
 - **Rapid repeated sends**: only one turn is in flight at a time; duplicate turns are not created.
+- **Backend unreachable on page load**: thread creation fails, sending is disabled, and a
+  connection notice is shown. The character and its idle animation are unaffected. No retry is
+  attempted automatically.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
 **Presentation**
 
-- **FR-001**: The page MUST present, in a single view with no navigation, a character display area, a
-  scrolling message log, and a text input with a send control.
+- **FR-001**: The page MUST present a full-screen character display area. A collapsible sidebar MUST be positioned on the left containing a "New Chat" button and a list of conversations (mocked with dummy data for now). The conversation chat panel (message log and text input) MUST overlay the bottom 50% of the character display area using a top-to-bottom gradient transition (`bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)]`) without heavy backdrop blur (`backdrop-blur-md`) or top border dividing lines, keeping the character's face, neck, and upper torso brightly lit and ensuring the outline of the character's torso, dark clothing, and seated posture remain clearly discernible behind the chat overlay.
 - **FR-002**: The message log MUST visually distinguish visitor messages from character messages and
-  MUST keep the newest message in view as content grows.
-- **FR-003**: The page MUST remain usable on a narrow viewport, with all controls reachable by
-  keyboard and no sideways page scrolling.
+  MUST keep the newest message in view as content grows. Character messages MUST be left-aligned
+  with a small character icon/avatar beside them; visitor messages MUST be right-aligned. Both
+  message types MUST share the same right edge alignment. Primary message text MUST be pure white
+  (`text-white`) with subtle shadow (`drop-shadow-md` and text shadow) for maximum contrast directly
+  against the character background artwork. Message bubbles MUST use translucent backgrounds
+  (`bg-[var(--bubble-character)]/60`, `bg-[var(--bubble-visitor)]/85`) to keep the character artwork
+  discernible behind dialogue.
+- **FR-003**: The UI MUST be responsive across standard breakpoints (< 640px Phone, 640–1023px Tablet, 1024–1279px Laptop, ≥ 1280px Desktop). On mobile viewports (< 640px), the sidebar MUST convert to an off-canvas drawer accessed via a menu button, while the chat panel continues to overlay the bottom 50% of the screen. The page MUST NOT have sideways scrolling.
 - **FR-036**: Reply text MUST be announced to assistive technology once, as a whole, when the reply is
   complete — never progressively as it accumulates — so a screen-reader user hears one coherent reply
   rather than fragments.
@@ -215,6 +269,9 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **FR-038**: The character display MUST carry a text description that names the character and its
   current emotional state in plain words, updated whenever the emotional state changes, so the
   character's reaction is available to a visitor who cannot see the character display.
+- **FR-040**: While the character is in the thinking state (FR-010), a typing/thinking indicator MUST
+  be displayed as a temporary message bubble inside the chat panel. The indicator MUST be replaced by
+  the actual reply message bubble once streaming begins and MUST respect the reduced-motion preference (FR-014).
 - **FR-004**: Every visitor-facing message — errors, limits, waiting states — MUST be plain language
   the visitor can act on, and MUST NOT expose provider names, error codes, or diagnostic text.
 
@@ -251,6 +308,10 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **FR-035**: The reduced-motion preference MUST be honoured for the whole visit including page load,
   so no motion plays before the preference is applied, and MUST take effect without the visitor
   configuring anything in the page.
+- **FR-042**: The character model MUST be rendered fully visible — head to toe — within the character
+  display area at all times. When the container is too small to show the model at its native size,
+  the model MUST be scaled down to fit entirely rather than cropped. No part of the model — in
+  particular the face and head — may be clipped by the container boundary.
 
 **Conversation**
 
@@ -258,10 +319,26 @@ a distinct, visibly different state during the wait and leaves it when text begi
   requested.
 - **FR-016**: Reply text MUST be displayed progressively as it arrives, not withheld until the reply
   is complete.
-- **FR-017**: Conversation history for the current visit MUST accompany each new message so replies
-  are aware of earlier turns, bounded to the 6 most recent messages — visitor and character combined,
-  counted per the definition of a turn in Key Entities — with anything older dropped from what travels
-  onward while remaining visible in the log.
+- **FR-017**: Conversation context is managed by the external backend via a thread identifier.
+  The frontend MUST NOT send conversation history with each message; it sends only the visitor's
+  current input and the thread ID. Earlier turns remain visible in the local message log but do not
+  travel onward. The 6-message history bound is enforced server-side, not by the frontend.
+- **FR-043**: On page load, the frontend MUST request a new thread identifier by sending a POST
+  request to the backend threads endpoint. The returned UUID MUST be stored in component state and
+  included with every subsequent chat message for the duration of the visit.
+- **FR-045**: If thread creation fails (network error, backend unreachable, or non-200 response),
+  sending MUST be disabled and a plain-language connection notice MUST be shown in the chat panel
+  until thread creation succeeds. The character and its idle animation remain unaffected.
+- **FR-046**: The backend chat endpoint streams its reply as plain text chunks (not SSE or structured
+  JSON). The frontend MUST read the response body as a byte stream and decode it as UTF-8 text,
+  using the existing cue reader to extract the trailing emotional cue from the accumulated text.
+- **FR-047**: The frontend MUST call the external FastAPI backend directly for both thread creation
+  and chat. No Next.js API route or server-side proxy MUST exist in this project for those purposes.
+  CORS handling is the backend’s responsibility.
+- **FR-044**: This project is frontend-only. All backend behaviour — persona instructions, provider
+  credentials, rate limiting, request validation, and conversation context — is the responsibility
+  of a separate FastAPI backend project. The frontend communicates with that backend via two HTTP
+  endpoints: one for thread creation and one for chat, both configurable.
 - **FR-018**: The reply MUST carry a single emotional cue as plain text at an agreed position, and
   the conversation layer MUST strip that cue from the displayed text before the visitor can see it.
 - **FR-019**: A missing, malformed, or unrecognised cue MUST NOT prevent the reply text from being
@@ -275,34 +352,36 @@ a distinct, visibly different state during the wait and leaves it when text begi
   input beyond it prevented rather than silently truncated at send time.
 - **FR-023**: A failed, empty, or abandoned reply MUST leave the conversation in a state where the
   visitor can send another message without reloading the page.
-- **FR-024**: Conversation history MUST exist only for the duration of the visit and MUST NOT be
-  written to any persistent store on the device or the server.
+- **FR-024**: Active conversation history MUST exist only for the duration of the visit and MUST NOT be
+  written to any persistent store on the device or the server. The historical conversations list in the sidebar MUST be populated with static dummy data for demonstration purposes.
 
-**Inference proxy**
+**External backend contract** _(backend implemented in a separate FastAPI project)_
 
-- **FR-025**: All provider requests MUST pass through a server-side endpoint owned by this project.
-  The provider credential MUST NOT be present in anything delivered to the browser.
-- **FR-026**: The endpoint MUST attach the character's persona instructions — including the
+- **FR-025**: All provider requests MUST pass through the external backend. The provider credential
+  MUST NOT be present in anything delivered to the browser.
+- **FR-026**: The backend MUST attach the character's persona instructions — including the
   instruction to emit the emotional cue — server-side. The browser MUST NOT be able to supply,
   replace, or read those instructions.
-- **FR-027**: The endpoint MUST stream the reply back to the browser as it arrives from the provider,
-  without waiting for completion.
-- **FR-028**: The endpoint MUST enforce a single global ceiling of 150 requests shared by all
+- **FR-027**: The backend MUST stream the reply back to the browser as it arrives from the provider,
+  without waiting for completion. The frontend receives this as a streaming response.
+- **FR-028**: The backend MUST enforce a single global ceiling of 150 requests shared by all
   visitors, reset on a fixed daily period, and MUST reject requests beyond it before contacting the provider. The
   count MUST hold across separate server invocations, not only within one. No per-visitor limit is
   enforced and no visitor identifier — address, token, or fingerprint — is derived, transmitted, or
   stored for limiting purposes.
-- **FR-029**: The endpoint MUST validate incoming request shape and reject anything malformed without
+- **FR-029**: The backend MUST validate incoming request shape and reject anything malformed without
   contacting the provider.
-- **FR-030**: The endpoint MUST translate provider failures into a generic failure response and MUST
+- **FR-030**: The backend MUST translate provider failures into a generic failure response and MUST
   NOT relay provider error text or credentials to the browser.
 - **FR-034**: A reply request MUST be abandoned after 20 seconds without completing, counted from
-  when the request reaches the endpoint. Abandonment MUST be treated as a failure per FR-030 and
+  when the request reaches the backend. Abandonment MUST be treated as a failure per FR-030 and
   MUST NOT be retried automatically — recovery is the visitor sending again. A request that has begun
   streaming text MUST be allowed to finish streaming rather than being cut off at the 20-second mark.
-- **FR-031**: The endpoint MUST NOT log visitor message content or reply content by default.
-- **FR-032**: The provider, endpoint address, model identifier, and persona text MUST all be
-  configurable without changing conversation or character behaviour.
+- **FR-031**: The backend MUST NOT log visitor message content or reply content by default.
+- **FR-032**: The backend endpoint addresses, model identifier, and persona text MUST all be
+  configurable without changing conversation or character behaviour. The frontend MUST read the
+  backend base URL from the `NEXT_PUBLIC_BACKEND_URL` environment variable, falling back to
+  `http://127.0.0.1:8000` when the variable is not set.
 
 **Out of scope**
 
@@ -324,7 +403,7 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **Persona instructions**: the character's personality and the cue-emission instruction, held
   server-side only.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 
@@ -365,8 +444,9 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **SC-012**: Replacing the character display with a still image, or switching the model provider,
   requires no change on the other side of the emotion seam — demonstrated by doing each once.
 - **SC-013**: With the caps in force, a single day's provider usage cannot exceed 150 requests, and
-  the text sent onward for any one request cannot exceed 300 characters of new input plus the 6 most
-  recent messages — verifiable by driving the endpoint past each cap and observing rejection.
+  the frontend sends only the visitor's current input (at most 300 characters) plus the thread ID.
+  The backend bounds conversation context server-side via the thread. Verifiable by driving the
+  backend endpoint past each cap and observing rejection.
 
 ## Assumptions
 
@@ -377,8 +457,9 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **Character rig**: a freely licensed sample character is used, licensed for non-commercial use,
   which is what this public portfolio demo is. Its animations and expressions are inventoried before
   the emotional state set is fixed, so the set is derived from the rig rather than chosen up front.
-- **Cost model**: inference runs on a free tier. A 6-message history window (FR-017), a
-  300-character input cap (FR-022), and a 150-request daily ceiling (FR-028) exist to keep usage inside that allowance. A shared
+- **Cost model**: inference runs on a free tier. A 6-message history window (FR-017, enforced by the
+  backend), a 300-character input cap (FR-022), and a 150-request daily ceiling (FR-028) exist to
+  keep usage inside that allowance. A shared
   allowance exhausted by other traffic — whether the provider's or this demo's own ceiling — is
   treated as a temporary-limit condition, not a defect.
 - **No visitor identity**: the demo deliberately identifies no visitor at all, so fair-share limiting
@@ -391,8 +472,8 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **No persistence, no identity**: no database, no accounts, no session storage. A visitor does not
   return to resume a conversation, so conversation history lives in browser memory only. This is also
   why the global request ceiling must be counted outside server process memory.
-- **Single deployment**: the page and the inference endpoint ship as one deployable unit, so no
-  cross-origin configuration is required.
+- **Two deployments**: the frontend (this project) and the backend (a separate FastAPI project) are
+  deployed independently. CORS handling is the backend's responsibility (FR-047, D15).
 - **Content moderation** relies on the provider's own safeguards plus the persona instructions; no
   additional filtering layer is in scope.
 - **Reduced-motion handling** relies on the platform's existing preference signal; no in-page motion

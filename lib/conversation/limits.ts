@@ -1,13 +1,12 @@
 /**
- * The conversation side of the two caps (FR-017, FR-022), plus the shapes the log is made of.
+ * The conversation side of the character cap (FR-022), plus the shapes the log is made of.
  *
- * The numbers themselves live in lib/limits.ts, which imports nothing, because the endpoint enforces
- * the same two caps independently and may not import from this layer.
+ * The number itself lives in lib/limits.ts, which imports nothing.
  */
 
-import { HISTORY_WINDOW, MAX_INPUT_CHARACTERS } from '@/lib/limits';
+import { MAX_INPUT_CHARACTERS } from '@/lib/limits';
 
-export { HISTORY_WINDOW, MAX_INPUT_CHARACTERS };
+export { MAX_INPUT_CHARACTERS };
 
 export type MessageStatus = 'complete' | 'streaming' | 'failed';
 export type MessageAuthor = 'visitor' | 'character';
@@ -18,11 +17,6 @@ export interface Message {
   /** Display text. The cue has already been stripped (FR-018). */
   text: string;
   status: MessageStatus;
-}
-
-export interface OutboundMessage {
-  role: 'user' | 'assistant';
-  content: string;
 }
 
 /** How many characters the visitor may still type. Never negative. */
@@ -46,21 +40,4 @@ export function clampInput(value: string): string {
 /** A message worth sending: not blank once trimmed. */
 export function isSendable(draft: string): boolean {
   return draft.trim().length > 0;
-}
-
-/**
- * The bounded slice that travels onward with each new message (FR-017).
- *
- * Only complete messages travel: a streaming or failed character message is a partial or absent
- * reply, and sending either would teach the model to imitate truncation. Older messages stay
- * visible in the log; they simply do not travel.
- */
-export function outboundHistory(messages: readonly Message[]): OutboundMessage[] {
-  return messages
-    .filter((message) => message.status === 'complete' && message.text.trim().length > 0)
-    .slice(-HISTORY_WINDOW)
-    .map((message) => ({
-      role: message.author === 'visitor' ? ('user' as const) : ('assistant' as const),
-      content: message.text,
-    }));
 }

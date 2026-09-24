@@ -3,7 +3,8 @@
 **Date**: 2026-08-31 | **Plan**: [plan.md](./plan.md) | **Spec**: [spec.md](./spec.md)
 
 Nothing here is persisted. Every entity lives in browser memory for the length of one visit
-(FR-024), except the daily counter in D7, which holds one integer server-side and expires itself.
+(FR-024). The thread UUID is stored in React state, created by the external FastAPI backend on page
+load (FR-043, D15). All server-side storage is the backend's responsibility.
 
 ---
 
@@ -60,15 +61,13 @@ The ordered history for the current visit, plus the bounded slice that travels o
 | Field | Type | Rules |
 |-------|------|-------|
 | messages | `Message[]` | Full visit history, oldest first. Display source of truth |
+| threadId | `string \| null` | UUID from `POST /threads`; null until thread creation succeeds (FR-043) |
 | inFlight | `boolean` | True from send until the reply completes, fails, or times out |
 | emotion | `Emotion` | Current emotional state; the last value handed across the seam |
-| status | `"idle" \| "waiting" \| "streaming" \| "error" \| "limited"` | Drives both the panel status and the announcements |
+| status | `"idle" \| "connecting" \| "waiting" \| "streaming" \| "error" \| "limited"` | Drives both the panel status and the announcements; `"connecting"` is the thread-creation phase (FR-045) |
 
-**Derived value**:
-
-- `outboundHistory = messages.slice(-6)` - the 6 most recent messages, visitor and character
-  combined, filtered to `status: "complete"` (FR-017). Older messages stay visible in the log but do
-  not travel.
+**Note**: `outboundHistory` has been removed (D15). The frontend no longer sends conversation
+history with each message. The backend manages context via the thread ID.
 
 **Validation rules**:
 
@@ -77,6 +76,39 @@ The ordered history for the current visit, plus the bounded slice that travels o
 - A failed, empty, or abandoned reply returns `status` to a sendable state without a reload
   (FR-023).
 - The whole entity is discarded on unload; nothing is written to any persistent store (FR-024).
+
+---
+
+## ThreadId
+
+A UUID identifying the conversation thread on the external backend (FR-043, D15).
+
+| Field | Type | Rules |
+|-------|------|-------|
+| value | `string` | UUID returned by `POST /threads` on page load |
+
+**Validation rules**:
+
+- Fetched once on mount via `POST /threads`. Stored in component state for the visit only.
+- If the fetch fails, `ConversationStatus` is `'connecting'` and sending is disabled (FR-045).
+- Included as `thread_id` in every `POST /chat` request.
+- Discarded on unload/reload — a new page load creates a new thread (FR-024).
+
+---
+
+## MockConversationListItem
+
+Static dummy data to populate the sidebar's list of old conversations, since no real persistence exists (FR-001, FR-024).
+
+| Field | Type | Rules |
+|-------|------|-------|
+| id | `string` | Unique mock identifier |
+| title | `string` | Short display text for the list |
+| date | `string` | Mock timestamp |
+
+**Validation rules**:
+- Used strictly for presentation in the sidebar.
+- Never interacted with by the conversation or character layers.
 
 ---
 
@@ -141,36 +173,35 @@ state (FR-005, FR-010).
 
 ---
 
-## ChatRequest / ChatResponse
+## ChatRequest / ChatResponse (external backend)
 
-The browser-to-proxy surface. Full contract in [contracts/chat-api.md](./contracts/chat-api.md).
+The browser-to-backend surface. Full contract in [contracts/chat-api.md](./contracts/chat-api.md).
+The backend is a separate FastAPI project (D15, FR-044).
 
 | Entity | Field | Type | Rules |
 |--------|-------|------|-------|
-| ChatRequest | messages | `{role: "user" \| "assistant", content: string}[]` | At most 6 entries; each `content` at most 300 characters; rejected without contacting the provider if malformed (FR-029) |
-| ChatResponse | (stream) | newline-delimited text chunks | Reply text only. No provider payload shape, no error text, no model or provider identifiers (FR-030) |
+| ChatRequest | user_input | `string` | The visitor's message; at most 300 characters after trim (FR-022) |
+| ChatRequest | thread_id | `string` | UUID from `POST /threads` (FR-043) |
+| ChatResponse | (stream) | plain-text chunks | Reply text only. No provider payload shape, no error text, no model or provider identifiers (FR-030) |
 
 **Validation rules**:
 
-- The persona/system message is attached server-side and is absent from the request type entirely, so
-  the browser cannot supply, replace, or read it (FR-026).
+- The persona/system message is attached server-side by the backend and is absent from the request
+  type entirely, so the browser cannot supply, replace, or read it (FR-026).
 - No visitor identifier of any kind is accepted, derived, or stored (clarification session, FR-028).
 
 ---
 
-## DailyQuota
+## DailyQuota _(external backend)_
 
-Server-side, the only thing that outlives a request. One integer per UTC day (D7, FR-028).
+Server-side, the only thing that outlives a request. Managed entirely by the external FastAPI
+backend (D15). This project does not interact with or store the daily counter.
 
 | Field | Type | Rules |
 |-------|------|-------|
-| key | `string` | `quota:YYYY-MM-DD` (UTC) |
-| count | `number` | Incremented before the provider call; ceiling 150 |
-| ttl | `seconds` | Slightly over 24 hours, so the key expires itself |
+| key | `string` | Backend-managed |
+| count | `number` | Backend-managed; ceiling 150 |
 
-**Validation rules**:
-
-- Holds no visitor data and no identifier - it cannot distinguish one caller from another by design.
-- If the store is unreachable, the check fails closed and the request is refused with the
-  temporary-limit message (D7).
-- A refused request must not consume a count.
+**Note**: All validation and enforcement of the daily quota is the backend's responsibility.
+The frontend receives 429 responses when the limit is reached and displays the appropriate
+message (FR-028).

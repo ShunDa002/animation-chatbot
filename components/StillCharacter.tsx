@@ -11,15 +11,10 @@ interface Props {
 }
 
 /**
- * The still fallback (FR-012).
+ * The still fallback (FR-012, D13).
  *
  * Shown when the animated character cannot be displayed - a missing model file, a blocked request, no
- * WebGL - and used deliberately as the whole character layer while the conversation is built and
- * tested on its own.
- *
- * If the image itself is missing the text description stands in for it. FR-012 requires the rest of
- * the page to remain fully usable, and a broken-image icon beside a working conversation satisfies
- * the letter of that but not the point.
+ * WebGL.
  */
 export default function StillCharacter({ emotion, label }: Props) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -27,21 +22,28 @@ export default function StillCharacter({ emotion, label }: Props) {
 
   if (imageFailed) {
     return (
-      <div role="img" aria-label={description} data-emotion={emotion} data-still="text-only">
-        <p className="character-status">{description}</p>
+      <div
+        className="flex items-center justify-center p-4 text-center w-full h-full"
+        role="img"
+        aria-label={description}
+        data-emotion={emotion}
+        data-still="text-only"
+      >
+        <p className="character-status text-xs sm:text-sm text-[var(--text-muted)] m-0">
+          {description}
+        </p>
       </div>
     );
   }
 
   return (
-    // next/image would add an optimizer round trip for one static local asset, and its error
-    // handling does not expose the onError fallback this component depends on for FR-012.
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src="/live2d/still.png"
       alt={description}
       data-emotion={emotion}
       data-still="image"
+      className="block w-full h-full max-h-full object-contain select-none"
       onError={() => setImageFailed(true)}
     />
   );

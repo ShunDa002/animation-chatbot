@@ -20,6 +20,8 @@ export const copy = {
   thinking: 'Aria is thinking about a reply.',
   /** Visible in the panel for the same state. */
   waiting: 'Thinking…',
+  /** Visible and announced during the initial thread-creation phase on load (FR-045). */
+  connecting: 'Connecting…',
 
   /** Announced once, whole, when the reply is complete (FR-036). */
   replyComplete: (text: string) => `Aria replied: ${text}`,
@@ -43,6 +45,8 @@ export const copy = {
   failedStalled: 'Aria stopped mid-sentence. You can send another message.',
   limited: 'The demo is temporarily limited. Please try again later.',
   failedSend: 'That message could not be sent.',
+  /** Shown when thread creation fails on load (FR-045). Visitor reloads to reconnect. */
+  backendUnavailable: 'Could not connect to the backend. Please reload the page to try again.',
 
   /** Rig attribution, required by the sample model's license (research D4). */
   attributionPrefix: 'Character model:',

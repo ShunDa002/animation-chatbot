@@ -1,6 +1,8 @@
+@import 'tailwindcss';
+
 /*
  * Values here mirror lib/ui/tokens.ts. CSS cannot import the TS module, so the tokens are declared
- * once as custom properties and referenced everywhere below - the same single-source rule, expressed
+ * once as custom properties and referenced everywhere - the same single-source rule, expressed
  * in the one place the language forces a copy.
  */
 
@@ -31,6 +33,23 @@
   --easing-standard: cubic-bezier(0.2, 0, 0.2, 1);
 
   color-scheme: dark;
+}
+
+@theme {
+  --color-bg: #12131a;
+  --color-surface: #1c1e27;
+  --color-bubble-visitor: #2d3348;
+  --color-bubble-character: #232735;
+  --color-text: #e8e9ee;
+  --color-text-muted: #a2a6b8;
+  --color-danger: #ff9a8a;
+  --color-focus: #7fb2ff;
+  --color-accent: #5b8def;
+  --color-on-accent: #0b1020;
+  --color-border: #313547;
+
+  --radius-bubble: 0.875rem;
+  --radius-control: 0.5rem;
 }
 
 *,
@@ -64,127 +83,14 @@ body {
   outline-offset: 2px;
 }
 
-/* --- layout ---------------------------------------------------------------- */
-
-.page {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: var(--space-xl) var(--space-lg);
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-}
-
-.masthead h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.masthead p {
-  margin: var(--space-xs) 0 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.stage-and-chat {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-lg);
-  align-items: stretch;
-  flex: 1;
-  min-height: 0;
-}
-
-/* Below the stacking width both panes stay usable rather than being cropped (FR-003). */
-@media (max-width: 820px) {
-  .stage-and-chat {
-    grid-template-columns: minmax(0, 1fr);
+@keyframes waiting-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
   }
-}
-
-.character-area {
-  position: relative;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-bubble);
-  min-height: 260px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.character-area canvas,
-.character-area img {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-}
-
-.character-status {
-  position: absolute;
-  bottom: var(--space-sm);
-  left: var(--space-md);
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-
-.attribution {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  margin: 0;
-}
-
-/* --- chat panel ------------------------------------------------------------ */
-
-.chat-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-bubble);
-  padding: var(--space-lg);
-  min-height: 0;
-}
-
-.message-log {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  min-height: 200px;
-  padding-right: var(--space-xs);
-}
-
-.message {
-  max-width: 85%;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-bubble);
-  animation: message-in var(--duration-message-in) var(--easing-standard);
-  overflow-wrap: anywhere;
-}
-
-.message.visitor {
-  align-self: flex-end;
-  background: var(--bubble-visitor);
-}
-
-.message.character {
-  align-self: flex-start;
-  background: var(--bubble-character);
-}
-
-.message-author {
-  display: block;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  margin-bottom: 2px;
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes message-in {
@@ -196,96 +102,6 @@ body {
     opacity: 1;
     transform: none;
   }
-}
-
-.status-line {
-  min-height: 1.4em;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.status-line.error {
-  color: var(--danger);
-}
-
-.waiting-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.waiting-indicator::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: waiting-pulse var(--duration-waiting-pulse) ease-in-out infinite;
-}
-
-@keyframes waiting-pulse {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* --- composer -------------------------------------------------------------- */
-
-.composer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
-.composer-row {
-  display: flex;
-  gap: var(--space-sm);
-  align-items: flex-end;
-}
-
-.composer textarea {
-  flex: 1;
-  min-height: 2.75rem;
-  max-height: 8rem;
-  resize: vertical;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-}
-
-.composer button {
-  padding: var(--space-sm) var(--space-lg);
-  border-radius: var(--radius-control);
-  border: 1px solid transparent;
-  background: var(--accent);
-  color: var(--on-accent);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.composer button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.composer-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-md);
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.composer-meta .at-limit {
-  color: var(--danger);
 }
 
 /* Visually hidden but available to assistive technology. The live region lives here. */
