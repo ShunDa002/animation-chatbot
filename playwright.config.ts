@@ -20,7 +20,7 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
-      command: `node tests/fixtures/mock-backend.ts ${BACKEND_PORT}`,
+      command: `./node_modules/.bin/jiti tests/fixtures/mock-backend.ts ${BACKEND_PORT}`,
       url: `${BACKEND_BASE}/control/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,

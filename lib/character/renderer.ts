@@ -1,5 +1,5 @@
 import { type Emotion, isEmotion, NEUTRAL } from '@/lib/emotion';
-import { EMOTION_MAP } from './emotionMap';
+import { EMOTION_MAP, IDLE_MOTION_INDICES } from './emotionMap';
 import { applyReducedMotion } from './reducedMotion';
 
 /**
@@ -59,6 +59,8 @@ export async function createCharacter(options: CreateOptions): Promise<Character
   let currentEmotion: Emotion = NEUTRAL;
   let currentLabel: string = EMOTION_MAP[NEUTRAL].label;
   let isThinking = false;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  let isPlayingReaction = false;
 
   try {
     const PIXI = await import('pixi.js');
@@ -118,7 +120,7 @@ export async function createCharacter(options: CreateOptions): Promise<Character
       return createFallbackHandle();
     }
 
-    // Patch Cubism4InternalModel.prototype.updateWebGLContext to avoid crash on models without clipping masks (Haru)
+    // Patch Cubism4InternalModel.prototype.updateWebGLContext to avoid crash on models without clipping masks (e.g. 1024113)
     if (model.internalModel) {
       const proto = Object.getPrototypeOf(model.internalModel);
       if (proto && !proto.__patchedUpdateWebGLContext) {
@@ -143,6 +145,52 @@ export async function createCharacter(options: CreateOptions): Promise<Character
 
     app.stage.addChild(model);
 
+    const getRandomIdleDelay = () => Math.floor(Math.random() * (8000 - 3000 + 1)) + 3000;
+
+    const playRandomIdleMotion = () => {
+      if (isDestroyed || reducedMotion || isPlayingReaction) return;
+      if (!model || !model.motion) return;
+
+      const randomIndex = Math.floor(Math.random() * IDLE_MOTION_INDICES.length);
+      const motionIndex = IDLE_MOTION_INDICES[randomIndex];
+
+      try {
+        model.motion('', motionIndex, MotionPriority.IDLE);
+      } catch (err) {
+        console.warn('[renderer] idle motion error:', err);
+      }
+    };
+
+    const scheduleNextIdle = (delayMs?: number) => {
+      if (isDestroyed || reducedMotion) return;
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+
+      const delay = delayMs ?? getRandomIdleDelay();
+      idleTimer = setTimeout(() => {
+        idleTimer = null;
+        if (isDestroyed || reducedMotion || isPlayingReaction) return;
+        playRandomIdleMotion();
+      }, delay);
+    };
+
+    const onMotionFinish = () => {
+      if (isDestroyed || reducedMotion) return;
+      isPlayingReaction = false;
+      scheduleNextIdle();
+    };
+
+    // Configure motion manager: disable built-in zero-delay idle loop and listen for motion finish
+    if (model.internalModel?.motionManager) {
+      model.internalModel.motionManager.groups.idle = '';
+      model.internalModel.motionManager.idleMotionGroup = '';
+      if (typeof model.internalModel.motionManager.on === 'function') {
+        model.internalModel.motionManager.on('motionFinish', onMotionFinish);
+      }
+    }
+
     // Layout model on canvas (FR-042, R13)
     const layoutModel = () => {
       if (!model) return;
@@ -158,12 +206,10 @@ export async function createCharacter(options: CreateOptions): Promise<Character
         app.renderer.resize(width, height);
       }
 
+      // Explicitly position the model to avoid anchor inconsistencies.
+      // Reset anchor if it exists so we can predictably position by top-left.
       if (model.anchor && typeof model.anchor.set === 'function') {
-        model.anchor.set(0.5, 0.5);
-      }
-      if (typeof model.x === 'number') {
-        model.x = width / 2;
-        model.y = height / 2;
+        model.anchor.set(0, 0);
       }
 
       const originalWidth = model.internalModel?.originalWidth || model.width;
@@ -172,29 +218,36 @@ export async function createCharacter(options: CreateOptions): Promise<Character
       if (originalWidth && originalHeight && height > 0 && width > 0) {
         const scaleX = width / originalWidth;
         const scaleY = height / originalHeight;
-        // Contain-fit scale with 0.85 visual padding factor for breathing room (FR-042, R13)
-        const scale = Math.min(scaleX, scaleY) * 0.85;
+        
+        // The model texture has large transparent margins (~10% top, ~15% bottom).
+        // Zoom by 1.33 to fill the screen vertically, then shift downwards.
+        const scale = scaleY * 1.33;
+        
         if (model.scale && typeof model.scale.set === 'function') {
           model.scale.set(scale);
+        }
+        
+        if (typeof model.x === 'number') {
+          const scaledWidth = originalWidth * scale;
+          const scaledHeight = originalHeight * scale;
+          model.x = width / 2 - scaledWidth / 2;
+          // Shift downwards by 15% of the scaled height to hide the transparent bottom gap
+          model.y = height - scaledHeight + (scaledHeight * 0.15);
         }
       }
     };
 
     layoutModel();
 
-    // Reduced motion configuration (T023, FR-009, FR-035)
+    // Reduced motion configuration (T023, FR-009, FR-035) vs Random Idle Sequence (FR-005, Phase 14)
     if (reducedMotion) {
       applyReducedMotion(model);
     } else {
-      if (model.motion) {
-        try {
-          model.motion('Idle', undefined, MotionPriority.IDLE);
-        } catch {}
-      }
+      scheduleNextIdle();
     }
 
     // Set initial baseline neutral expression
-    if (model.expression) {
+    if (model.expression && EMOTION_MAP[NEUTRAL].expression) {
       try {
         model.expression(EMOTION_MAP[NEUTRAL].expression);
       } catch {}
@@ -224,19 +277,25 @@ export async function createCharacter(options: CreateOptions): Promise<Character
 
         if (reducedMotion) {
           // R10: Expression only, no motion
-          if (model.expression) {
+          if (model.expression && presentation.expression) {
             try {
               model.expression(presentation.expression);
             } catch {}
           }
         } else {
           // R3, R4, R5: Start reaction at FORCE priority, apply and hold expression
+          if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+          }
+          isPlayingReaction = true;
+
           if (model.motion) {
             try {
               model.motion(presentation.motionGroup, presentation.motionIndex, MotionPriority.FORCE);
             } catch {}
           }
-          if (model.expression) {
+          if (model.expression && presentation.expression) {
             try {
               model.expression(presentation.expression);
             } catch {}
@@ -273,7 +332,17 @@ export async function createCharacter(options: CreateOptions): Promise<Character
         if (isDestroyed) return;
         isDestroyed = true;
 
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+
         try {
+          if (model?.internalModel?.motionManager && typeof model.internalModel.motionManager.off === 'function') {
+            try {
+              model.internalModel.motionManager.off('motionFinish', onMotionFinish);
+            } catch {}
+          }
           if (app?.ticker) {
             try {
               app.ticker.stop();

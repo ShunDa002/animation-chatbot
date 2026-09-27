@@ -36,10 +36,10 @@ export default function ChatPanel({ conversation, className = '' }: Props) {
 
   return (
     <section
-      className={`chat-panel absolute bottom-0 inset-x-0 h-1/2 z-20 flex flex-col p-3 sm:p-4 md:p-5 bg-transparent bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)] overflow-hidden text-white ${className}`}
+      className={`chat-panel absolute bottom-0 inset-x-0 h-1/2 z-20 flex flex-col px-3 pt-3 pb-0 sm:px-4 sm:pt-4 sm:pb-0 md:px-5 md:pt-5 md:pb-0 bg-transparent bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.6)] to-[rgba(28,30,39,0.8)] overflow-hidden text-white ${className}`}
       aria-label="Conversation"
     >
-      <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col min-h-0 gap-2 sm:gap-3 text-white">
+      <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col min-h-0 gap-2 sm:gap-3 text-white pb-0">
         <MessageLog messages={messages} status={status} />
 
         <p
@@ -76,11 +76,11 @@ export default function ChatPanel({ conversation, className = '' }: Props) {
         />
 
         <Announcer status={status} announcement={announcement} notice={notice} />
-
-        <p className="attribution text-[10px] text-slate-300/80 drop-shadow-sm text-center m-0 truncate">
-          Character model: Haru by Live2D Inc. (Free Material License). Rendering by pixi-live2d-display over PixiJS.
-        </p>
       </div>
+      
+      <p className="attribution absolute bottom-1 left-0 right-0 text-[10px] text-slate-300/80 drop-shadow-sm text-center m-0 truncate pointer-events-none">
+        Character model: Live2D Model 1024113. Rendering by pixi-live2d-display over PixiJS.
+      </p>
     </section>
   );
 }

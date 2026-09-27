@@ -54,7 +54,7 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
     page,
   }) => {
     // Intercept model3.json with a 404 to simulate broken modelUrl
-    await page.route('**/haru.model3.json', (route) => route.abort('failed'));
+    await page.route('**/*.model3.json', (route) => route.abort('failed'));
 
     await page.goto('/');
 
@@ -69,7 +69,7 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
     await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled();
   });
 
-  test('character model is scaled to fit so the head is visible in top ~30% of character area (FR-042, SC-002, T095)', async ({
+  test('character model is scaled to fit and flush with the bottom of the container with no empty space beneath (FR-042, SC-002, T138)', async ({
     page,
   }) => {
     await page.goto('/');
@@ -92,43 +92,51 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
     const screenshotBuffer = await characterArea.screenshot();
     const base64 = screenshotBuffer.toString('base64');
 
-    // Sample pixels in the top 30% of the character area (where the head and hair sit after centering
-    // with the 0.85 breathing room factor, guarding against the cropping bug returning)
-    const characterPixelCount = await page.evaluate(async (base64Img) => {
-      return new Promise<number>((resolve) => {
+    // Sample pixels in:
+    // 1. Top 30% vertically, middle 60% horizontally (head/hair visible, not cropped)
+    // 2. Bottom 5% vertically, middle 60% horizontally (flush with bottom boundary, no empty space beneath)
+    const { topCharacterPixels, bottomCharacterPixels } = await page.evaluate(async (base64Img) => {
+      return new Promise<{ topCharacterPixels: number; bottomCharacterPixels: number }>((resolve) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
           canvas.width = img.width;
           canvas.height = img.height;
           const ctx = canvas.getContext('2d');
-          if (!ctx) return resolve(0);
+          if (!ctx) return resolve({ topCharacterPixels: 0, bottomCharacterPixels: 0 });
           ctx.drawImage(img, 0, 0);
 
-          // Top 30% vertically, middle 60% horizontally (where head is positioned)
-          const topHeight = Math.floor(img.height * 0.3);
           const startX = Math.floor(img.width * 0.2);
           const sampleWidth = Math.floor(img.width * 0.6);
 
-          const imageData = ctx.getImageData(startX, 0, sampleWidth, topHeight);
-          const data = imageData.data;
+          // Top 30% vertically (where head is positioned)
+          const topHeight = Math.floor(img.height * 0.3);
+          const topImageData = ctx.getImageData(startX, 0, sampleWidth, topHeight);
+          const topData = topImageData.data;
+
+          // Bottom 5% vertically (flush against bottom boundary)
+          const bottomHeight = Math.max(1, Math.floor(img.height * 0.05));
+          const startBottomY = img.height - bottomHeight;
+          const bottomImageData = ctx.getImageData(startX, startBottomY, sampleWidth, bottomHeight);
+          const bottomData = bottomImageData.data;
 
           // Corner pixel (0,0) represents the container surface/background color
           const cornerData = ctx.getImageData(0, 0, 1, 1).data;
           const [bgR, bgG, bgB] = [cornerData[0], cornerData[1], cornerData[2]];
 
-          let characterPixels = 0;
-          for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            const diff = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
-            // Non-background pixel threshold (with tolerance margin per Finding C1/D1)
-            if (diff > 35) {
-              characterPixels++;
-            }
+          let topCount = 0;
+          for (let i = 0; i < topData.length; i += 4) {
+            const diff = Math.abs(topData[i] - bgR) + Math.abs(topData[i + 1] - bgG) + Math.abs(topData[i + 2] - bgB);
+            if (diff > 35) topCount++;
           }
-          resolve(characterPixels);
+
+          let bottomCount = 0;
+          for (let i = 0; i < bottomData.length; i += 4) {
+            const diff = Math.abs(bottomData[i] - bgR) + Math.abs(bottomData[i + 1] - bgG) + Math.abs(bottomData[i + 2] - bgB);
+            if (diff > 35) bottomCount++;
+          }
+
+          resolve({ topCharacterPixels: topCount, bottomCharacterPixels: bottomCount });
         };
         img.src = `data:image/png;base64,${base64Img}`;
       });
@@ -136,6 +144,10 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
 
     // The upper region must have character pixels (head/hair),
     // proving the model is not cropped at the top.
-    expect(characterPixelCount).toBeGreaterThan(100);
+    expect(topCharacterPixels).toBeGreaterThan(100);
+
+    // The bottom region must have character pixels, proving the model
+    // is attached flush to the bottom of the container with no empty space beneath (FR-042, R13, T138).
+    expect(bottomCharacterPixels).toBeGreaterThan(50);
   });
 });

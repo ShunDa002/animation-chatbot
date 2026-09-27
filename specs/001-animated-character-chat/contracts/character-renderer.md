@@ -38,8 +38,8 @@ emotion back and no chat state; the renderer still cannot talk to `lib/conversat
 
 | # | Guarantee | Source |
 |---|-----------|--------|
-| R1 | After `createCharacter` resolves, an idle animation is looping with no caller action | FR-005 |
-| R2 | The idle loop resumes whenever nothing else is playing, indefinitely | FR-005 |
+| R1 | After `createCharacter` resolves, an idle sequence begins with a random 3-8s delay between neutral/subtle motions | FR-005 |
+| R2 | The idle sequence resumes whenever nothing else is playing, indefinitely | FR-005 |
 | R3 | `setEmotion` starts the mapped reaction at forcing priority and applies the mapped expression | FR-007, FR-008 |
 | R4 | The expression persists after the reaction's motion ends, until the next `setEmotion` | FR-008 |
 | R5 | `setEmotion` during a playing reaction yields exactly one visible reaction - the newer - with no overlap or stuck pose | FR-009 |
@@ -50,7 +50,7 @@ emotion back and no chat state; the renderer still cannot talk to `lib/conversat
 | R10 | With `reducedMotion: true`, no motion starts, and idle motion, breath, physics, and blink are all suppressed; `setEmotion` applies the expression by cross-fade only | FR-014, D9 |
 | R11 | Model or WebGL failure calls `onUnavailable` exactly once and never throws into the caller | FR-012 |
 | R12 | No work on the render path exceeds one frame budget; nothing blocks the UI thread | Constitution IV |
-| R13 | The model is fully visible head-to-toe within the canvas at all times; when the container is smaller than the model's native size, the model is scaled down to fit entirely rather than cropped | FR-042 |
+| R13 | The model is fully visible head-to-toe within the canvas at all times and anchored to the bottom with no empty space beneath it; when the container is smaller than the model's native size, the model is scaled down to fit entirely rather than cropped | FR-042 |
 
 ## Load-order requirement
 
@@ -70,7 +70,7 @@ Stated so nobody adds them later thinking they were forgotten:
 ## Test obligations
 
 - Two `setEmotion` calls in the same frame leave exactly one reaction playing (R5).
-- After a reaction completes, the expression is unchanged and the idle loop is running (R4, R2).
+- After a reaction completes, the expression is unchanged and the idle sequence is running (R4, R2).
 - `destroy()` then `createCharacter()` in sequence yields one model, not two; PixiJS resource counts
   return to their post-create baseline (R8, R9).
 - With `reducedMotion: true`, no parameter driven by breath, physics, or blink changes across 60
@@ -78,4 +78,4 @@ Stated so nobody adds them later thinking they were forgotten:
 - A deliberately broken `modelUrl` calls `onUnavailable` once and the chat panel remains fully usable
   (R11).
 - After `createCharacter` and after `resize()`, the model's rendered bounds are contained entirely
-  within the canvas dimensions — no part extends beyond the canvas boundary (R13).
+  within the canvas dimensions with its bottom resting precisely at the bottom boundary (no empty space beneath) — no part extends beyond the canvas boundary (aside from intentional UI overlap at the bottom) (R13).

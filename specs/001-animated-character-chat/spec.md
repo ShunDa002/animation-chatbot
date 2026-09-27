@@ -20,6 +20,15 @@ nothing else — that is the entire vocabulary between them, so either side is r
 
 ## Clarifications
 
+### Session 2026-09-27
+
+- Q: How should the Live2D character be positioned vertically on the screen? → A: Render the character on the full screen height, attaching its bottom to the bottom of the screen with no empty space beneath it. It is acceptable for the message input to partially overlap the bottom of the character.
+
+### Session 2026-09-26
+
+- Q: How frequently should the random idle animations trigger? → A: Play with a brief random delay (e.g., 3-8 seconds) between animations to look natural.
+- Q: Should the random idle pool include strong emotional motions like crying or anger? → A: Exclude strong emotional reactions (e.g., Cry, Anger) and only use neutral/subtle motions for idle.
+
 ### Session 2026-09-24
 
 - Q: The requested sidebar includes a "list of old conversations", but the current spec explicitly states conversations are not persisted across visits. Should we introduce browser-local storage? → A: For now, create a list of dummy conversations with unique IDs and simple content.
@@ -278,7 +287,7 @@ a distinct, visibly different state during the wait and leaves it when text begi
 **Character behaviour**
 
 - **FR-005**: The character MUST begin an idle animation loop automatically on load, with no visitor
-  action, and MUST return to that loop whenever no other animation is playing.
+  action, and MUST return to that loop whenever no other animation is playing. The idle behavior MUST randomly select from a pool of neutral or subtle motions (excluding strong emotional reactions like Anger or Cry) and play them with a brief random delay (e.g., 3-8 seconds) between animations to appear lifelike.
 - **FR-006**: The character MUST support a closed, documented set of emotional states, sized to what
   the chosen character rig can actually express (expected 4–8 values, including a neutral default).
   The set MUST be established by inventorying the rig's available animations and expressions before
@@ -309,9 +318,12 @@ a distinct, visibly different state during the wait and leaves it when text begi
   so no motion plays before the preference is applied, and MUST take effect without the visitor
   configuring anything in the page.
 - **FR-042**: The character model MUST be rendered fully visible — head to toe — within the character
-  display area at all times. When the container is too small to show the model at its native size,
+  display area at all times, with the bottom of the character attached to the bottom of the screen
+  (no empty space beneath it). It is acceptable for the message input to partially overlap the
+  bottom of the character. When the container is too small to show the model at its native size,
   the model MUST be scaled down to fit entirely rather than cropped. No part of the model — in
-  particular the face and head — may be clipped by the container boundary.
+  particular the face and head — may be clipped by the container boundary (aside from the
+  intentional UI overlap at the bottom).
 
 **Conversation**
 

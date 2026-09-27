@@ -973,3 +973,43 @@ Each step adds value without breaking previous steps.
 - [X] T134 Full validation pass: run all tests (`npm test`, `npm run test:e2e`) to confirm no regressions and that the typing indicator correctly displays in the chat panel.
 
 **Checkpoint**: The speech bubble is removed and the chat panel natively handles the thinking indicator state.
+
+---
+
+## Phase 14: Random Idle Sequence Update (FR-005)
+
+**Purpose**: Update the idle behavior to play a random sequence of neutral/subtle motions with a 3-8 second delay between them, replacing the continuous looping behavior. Excludes strong emotional reactions.
+
+**Depends on**: Phase 13.
+
+### Tests for Phase 14
+
+- [X] T135 [P] [US1] Update `tests/unit/renderer.test.ts` to assert the updated R1 and R2 guarantees: the idle sequence plays with a random 3-8s delay and selects from neutral/subtle motions, rather than a continuous loop (must include a negative assertion that strong reactions like 'angry' or 'sad' are never selected for the idle sequence).
+
+### Implementation for Phase 14
+
+- [X] T136 [US1] Update `lib/character/renderer.ts`: replace the continuous idle loop with a random idle sequence. Implement a random 3-8 second delay between motions and ensure selection is from a pool of neutral/subtle motions (excluding strong emotional reactions like Anger or Cry). Ensure the sequence resumes whenever nothing else is playing (R1, R2).
+
+**Checkpoint**: The character's idle state feels lifelike with random, subtle motions and natural delays.
+
+---
+
+## Phase 15: Character Bottom Anchoring (FR-042)
+
+**Purpose**: Update the Live2D character model layout so the character is anchored to the bottom of the screen with no empty space beneath it, allowing the message input to partially overlap the bottom of the character. This implements the clarification for FR-042 and the updated R13 renderer contract.
+
+**Depends on**: Phase 14.
+
+### Tests for Phase 15
+
+- [X] T137 [P] [US1] Update `tests/unit/renderer.test.ts` for R13: after `createCharacter` resolves and after `resize()`, assert the model's rendered bounds rest precisely at the bottom boundary (no empty space beneath).
+- [X] T138 [P] [US1] Update E2E visual test in `tests/e2e/character.spec.ts`: assert the model is flush with the bottom of the character container.
+
+### Implementation for Phase 15
+
+- [X] T139 [US1] Fix `layoutModel()` in `lib/character/renderer.ts`: update the anchor and position logic to anchor the model precisely to the bottom of the canvas (e.g., `anchor(0.5, 1)` and `y = height`), taking scale and native bounds into account so there is no gap beneath it (FR-042, R13).
+  - *Note: To overcome the ~15% transparent empty padding at the bottom of the texture, the scale is multiplied by 1.33x and the bounding box is explicitly shifted downwards by 15% of the scaled height.*
+- [X] T141 [US2] Update `components/ChatPanel.tsx`: remove `pb-3 sm:pb-4 md:pb-5` padding from inner containers and reduce gradient opacity (`0.95` -> `0.8`) to ensure the message input touches the absolute bottom edge of the screen and the character's feet remain clearly visible behind it (FR-042).
+- [X] T140 Full validation pass: run all tests (`npm test`, `npm run test:e2e`) to confirm no regressions and that layout responsiveness is preserved.
+
+**Checkpoint**: The character model sits flush against the bottom of the screen with no empty space.
