@@ -5,90 +5,103 @@ import { EMOTION_LABELS } from './labels';
  * EmotionPresentation - defines how one Emotion is mapped to Live2D rig assets (data-model.md).
  *
  * Each emotion corresponds to:
- * - motionGroup: The motion group in 1024113.model3.json
- * - motionIndex: Optional index in the group (undefined lets renderer pick/default)
- * - expression: The .exp3.json expression name to persist after motion ends
+ * - motionGroup: The motion group in rem.json ('talk')
+ * - motionIndex: Index in the group
+ * - expression: Optional expression (none for Cubism 2.1 Remu)
  * - label: Plain-word emotion name for aria-label (FR-038)
  */
 export interface EmotionPresentation {
   motionGroup: string;
   motionIndex?: number;
+  motionIndices?: readonly number[];
   expression?: string;
   label: string;
 }
 
 /**
- * The exhaustive emotion map derived from the 1024113 Live2D rig inventory (T011, FR-006, FR-007).
+ * Pools of motion indices for different emotions.
+ * Sourced from rem.json "talk" motions.
+ */
+export const HAPPY_MOTION_INDICES: readonly number[] = [1, 12, 17, 23, 32, 34];
+export const ANGRY_MOTION_INDICES: readonly number[] = [2, 6, 9, 14, 15, 22, 28];
+export const SAD_MOTION_INDICES: readonly number[] = [5, 7, 24, 25];
+export const SHY_MOTION_INDICES: readonly number[] = [8, 11, 19, 20, 27, 30];
+
+/**
+ * Resolves the motion index for a given presentation.
+ * If the presentation defines multiple motionIndices, one is picked randomly.
+ * Otherwise, the presentation's fixed motionIndex is returned.
+ */
+export function getMotionIndex(presentation: EmotionPresentation): number | undefined {
+  if (presentation.motionIndices && presentation.motionIndices.length > 0) {
+    const idx = Math.floor(Math.random() * presentation.motionIndices.length);
+    return presentation.motionIndices[idx];
+  }
+  return presentation.motionIndex;
+}
+
+/**
+ * The exhaustive emotion map derived from the Remu Live2D rig inventory (T145, FR-006, FR-007).
  *
  * Typed as Record<Emotion, EmotionPresentation> so missing any union member causes a compilation error.
  */
 export const EMOTION_MAP: Record<Emotion, EmotionPresentation> = {
   neutral: {
-    motionGroup: '',
-    motionIndex: 14,
+    motionGroup: 'talk',
+    motionIndex: 0,
     label: EMOTION_LABELS.neutral,
   },
   happy: {
-    motionGroup: '',
-    motionIndex: 26,
+    motionGroup: 'talk',
+    motionIndices: HAPPY_MOTION_INDICES,
+    get motionIndex(): number {
+      const idx = Math.floor(Math.random() * HAPPY_MOTION_INDICES.length);
+      return HAPPY_MOTION_INDICES[idx] ?? 1;
+    },
     label: EMOTION_LABELS.happy,
   },
   sad: {
-    motionGroup: '',
-    motionIndex: 6,
+    motionGroup: 'talk',
+    motionIndices: SAD_MOTION_INDICES,
+    get motionIndex(): number {
+      const idx = Math.floor(Math.random() * SAD_MOTION_INDICES.length);
+      return SAD_MOTION_INDICES[idx] ?? 24;
+    },
     label: EMOTION_LABELS.sad,
   },
   surprised: {
-    motionGroup: '',
-    motionIndex: 9,
+    motionGroup: 'talk',
+    motionIndex: 5,
     label: EMOTION_LABELS.surprised,
   },
   angry: {
-    motionGroup: '',
-    motionIndex: 7,
+    motionGroup: 'talk',
+    motionIndices: ANGRY_MOTION_INDICES,
+    get motionIndex(): number {
+      const idx = Math.floor(Math.random() * ANGRY_MOTION_INDICES.length);
+      return ANGRY_MOTION_INDICES[idx] ?? 2;
+    },
     label: EMOTION_LABELS.angry,
   },
   shy: {
-    motionGroup: '',
-    motionIndex: 20,
+    motionGroup: 'talk',
+    motionIndices: SHY_MOTION_INDICES,
+    get motionIndex(): number {
+      const idx = Math.floor(Math.random() * SHY_MOTION_INDICES.length);
+      return SHY_MOTION_INDICES[idx] ?? 23;
+    },
     label: EMOTION_LABELS.shy,
   },
 };
 
 /**
- * Pool of neutral/subtle motion indices for the random idle sequence (FR-005, Phase 14).
- * Sourced from 1024113.model3.json motions:
- * - 0: 00_Puzzle_01 (subtle head tilt/curious)
- * - 2: 20_Expression_Smile_01 (subtle smile)
- * - 5: bound (subtle idle bounce)
- * - 8: 00_Doubt_01 (subtle curious/doubt)
- * - 13: 20_Expression_Eye_01 (subtle eye glance/blink)
- * - 14: 00_Wait_01 (standard wait/standing idle)
- * - 17: 20_Expression_Serious_01 (subtle calm/serious)
- * - 21: 00_Serious_01 (subtle posture adjustment)
- * - 27: 20_Expression_Puzzle_01 (subtle thought expression)
- * - 28: bound_down (subtle settle bounce)
+ * Pool of neutral/subtle motion indices for the random idle sequence (FR-005, Phase 14, Phase 16).
  */
-export const IDLE_MOTION_INDICES: readonly number[] = [0, 2, 5, 8, 13, 14, 17, 21, 27, 28];
+export const IDLE_MOTION_INDICES: readonly number[] = [0, 3, 4, 10, 13, 16, 18, 21, 26, 29, 31, 33];
 
 /**
  * Strong emotional reaction motion indices that must NEVER be selected for the idle sequence (FR-005).
- * Sourced from 1024113.model3.json motions:
- * - 1: 20_Expression_Sad_01 (Sad)
- * - 4: 20_Expression_Upset_01 (Upset)
- * - 6: 00_Sad_01 (Sad)
- * - 7: 00_Anger_01 (Anger)
- * - 9: 00_Surprise_01 (Surprise)
- * - 10: 00_Excite_01 (Excite)
- * - 11: 20_Expression_Shame_01 (Shame)
- * - 15: 00_Anger_02 (Anger)
- * - 16: 20_Expression_Anger_01 (Anger)
- * - 20: 00_Shame_01 (Shame)
- * - 23: 00_Upset_01 (Upset)
- * - 25: 00_Cry_01 (Cry)
- * - 26: 00_Happy_01 (Happy)
  */
 export const STRONG_EMOTION_MOTION_INDICES: readonly number[] = [
-  1, 4, 6, 7, 9, 10, 11, 15, 16, 20, 23, 25, 26,
+  1, 2, 5, 6, 7, 8, 9, 11, 12, 14, 15, 17, 19, 20, 22, 23, 24, 25, 27, 28, 30, 32, 34,
 ];
-

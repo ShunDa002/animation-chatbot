@@ -53,6 +53,7 @@ export const SCRIPTS: Record<string, ProviderScript> = {
   plain: { chunks: ['Hello ', 'there.', ' [emotion:happy]'], delayFirstMs: 40 },
   multiword: {
     chunks: ['I ', 'have ', 'been ', 'thinking ', 'about ', 'that.', ' [emotion:neutral]'],
+    gapMs: 30,
   },
 
   // --- cue handling (V3, V4) ------------------------------------------------

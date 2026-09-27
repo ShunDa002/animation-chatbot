@@ -1,5 +1,5 @@
 import { type Emotion, isEmotion, NEUTRAL } from '@/lib/emotion';
-import { EMOTION_MAP, IDLE_MOTION_INDICES } from './emotionMap';
+import { EMOTION_MAP, IDLE_MOTION_INDICES, getMotionIndex } from './emotionMap';
 import { applyReducedMotion } from './reducedMotion';
 
 /**
@@ -47,8 +47,8 @@ export async function createCharacter(options: CreateOptions): Promise<Character
     return createFallbackHandle();
   }
 
-  // Load-order check: window.Live2DCubismCore must exist (D2, D3, R11)
-  if (typeof window === 'undefined' || !(window as any).Live2DCubismCore) {
+  // Load-order check: window.Live2D or window.Live2DCubismCore must exist (D2, D3, R11)
+  if (typeof window === 'undefined' || (!(window as any).Live2D && !(window as any).Live2DCubismCore)) {
     onUnavailable();
     return createFallbackHandle();
   }
@@ -66,21 +66,24 @@ export async function createCharacter(options: CreateOptions): Promise<Character
     const PIXI = await import('pixi.js');
     if (signal?.aborted) return createFallbackHandle();
 
-    const cubism4 = (await import('pixi-live2d-display/cubism4')) as any;
+    const isCubism2 = modelUrl.endsWith('.json') && !modelUrl.endsWith('.model3.json');
+    const live2dDisplay = isCubism2
+      ? ((await import('pixi-live2d-display/cubism2')) as any)
+      : ((await import('pixi-live2d-display/cubism4')) as any);
     if (signal?.aborted) return createFallbackHandle();
 
-    const Live2DModel = cubism4.Live2DModel;
-    const MotionPriority = cubism4.MotionPriority;
+    const Live2DModel = live2dDisplay.Live2DModel;
+    const MotionPriority = live2dDisplay.MotionPriority;
 
-    if (cubism4.config) {
-      cubism4.config.sound = false;
-      cubism4.config.motionSync = false;
+    if (live2dDisplay.config) {
+      live2dDisplay.config.sound = false;
+      live2dDisplay.config.motionSync = false;
     }
 
-    if (cubism4.SoundManager) {
+    if (live2dDisplay.SoundManager) {
       try {
-        cubism4.SoundManager.volume = 0;
-        cubism4.SoundManager.play = () => Promise.resolve();
+        live2dDisplay.SoundManager.volume = 0;
+        live2dDisplay.SoundManager.play = () => Promise.resolve();
       } catch {}
     }
 
@@ -93,6 +96,7 @@ export async function createCharacter(options: CreateOptions): Promise<Character
       autoStart: true,
       backgroundAlpha: 0,
       antialias: true,
+      preserveDrawingBuffer: true,
     });
 
     if (signal?.aborted) {
@@ -121,9 +125,9 @@ export async function createCharacter(options: CreateOptions): Promise<Character
     }
 
     // Patch Cubism4InternalModel.prototype.updateWebGLContext to avoid crash on models without clipping masks (e.g. 1024113)
-    if (model.internalModel) {
+    if (!isCubism2 && model.internalModel) {
       const proto = Object.getPrototypeOf(model.internalModel);
-      if (proto && !proto.__patchedUpdateWebGLContext) {
+      if (proto && !proto.__patchedUpdateWebGLContext && proto.updateWebGLContext) {
         proto.__patchedUpdateWebGLContext = true;
         proto.updateWebGLContext = function (gl: any, glContextID: any) {
           try {
@@ -153,9 +157,10 @@ export async function createCharacter(options: CreateOptions): Promise<Character
 
       const randomIndex = Math.floor(Math.random() * IDLE_MOTION_INDICES.length);
       const motionIndex = IDLE_MOTION_INDICES[randomIndex];
+      const motionGroup = EMOTION_MAP[NEUTRAL].motionGroup;
 
       try {
-        model.motion('', motionIndex, MotionPriority.IDLE);
+        model.motion(motionGroup, motionIndex, MotionPriority.IDLE);
       } catch (err) {
         console.warn('[renderer] idle motion error:', err);
       }
@@ -206,10 +211,8 @@ export async function createCharacter(options: CreateOptions): Promise<Character
         app.renderer.resize(width, height);
       }
 
-      // Explicitly position the model to avoid anchor inconsistencies.
-      // Reset anchor if it exists so we can predictably position by top-left.
       if (model.anchor && typeof model.anchor.set === 'function') {
-        model.anchor.set(0, 0);
+        model.anchor.set(0.5, 1);
       }
 
       const originalWidth = model.internalModel?.originalWidth || model.width;
@@ -218,21 +221,15 @@ export async function createCharacter(options: CreateOptions): Promise<Character
       if (originalWidth && originalHeight && height > 0 && width > 0) {
         const scaleX = width / originalWidth;
         const scaleY = height / originalHeight;
-        
-        // The model texture has large transparent margins (~10% top, ~15% bottom).
-        // Zoom by 1.33 to fill the screen vertically, then shift downwards.
-        const scale = scaleY * 1.33;
+        const scale = Math.min(scaleX, scaleY);
         
         if (model.scale && typeof model.scale.set === 'function') {
           model.scale.set(scale);
         }
         
         if (typeof model.x === 'number') {
-          const scaledWidth = originalWidth * scale;
-          const scaledHeight = originalHeight * scale;
-          model.x = width / 2 - scaledWidth / 2;
-          // Shift downwards by 15% of the scaled height to hide the transparent bottom gap
-          model.y = height - scaledHeight + (scaledHeight * 0.15);
+          model.x = width / 2;
+          model.y = height;
         }
       }
     };
@@ -292,7 +289,8 @@ export async function createCharacter(options: CreateOptions): Promise<Character
 
           if (model.motion) {
             try {
-              model.motion(presentation.motionGroup, presentation.motionIndex, MotionPriority.FORCE);
+              const motionIndex = getMotionIndex(presentation);
+              model.motion(presentation.motionGroup, motionIndex, MotionPriority.FORCE);
             } catch {}
           }
           if (model.expression && presentation.expression) {

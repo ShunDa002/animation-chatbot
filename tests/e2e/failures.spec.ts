@@ -73,7 +73,7 @@ test.describe('Failure matrix (T066, quickstart V7)', () => {
   test('Broken modelUrl: Still image fallback shown, chat remains fully usable (FR-012)', async ({
     page,
   }) => {
-    await page.route('**/*.model3.json', (route) => route.abort('failed'));
+    await page.route('**/rem.json', (route) => route.abort('failed'));
     await page.goto('/');
 
     const stillImg = page.locator('img[data-still="image"], [data-still="text-only"]');

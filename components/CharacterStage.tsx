@@ -13,7 +13,7 @@ interface Props {
   emotion: Emotion;
   /** The second and last item of seam vocabulary (FR-010, FR-020). */
   thinking: boolean;
-  /** Optional override for tests (defaults to 1024113 Cubism 4 model). */
+  /** Optional override for tests (defaults to Remu Cubism 2.1 model). */
   modelUrl?: string;
   /** Optional callback for unavailability testing. */
   onUnavailable?: () => void;
@@ -31,7 +31,7 @@ interface Props {
 export default function CharacterStage({
   emotion,
   thinking,
-  modelUrl = '/live2d/model/1024113.model3.json',
+  modelUrl = '/live2d/model/rem.json',
   onUnavailable: onUnavailableProp,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

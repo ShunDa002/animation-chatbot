@@ -11,7 +11,7 @@ a language model replies as streaming text, and the character reacts with a matc
 expression. No accounts, no persistence, free-tier inference.
 
 This project is **frontend-only** (D15). The character is rendered by `pixi-live2d-display` over
-PixiJS v7, with the Cubism 4 Core runtime and a free sample model vendored as static assets. A
+PixiJS v7, with the Cubism 2.1 Core runtime (for the new Remu model) vendored locally, alongside the Cubism 4 Core runtime. A
 separate FastAPI backend project handles provider credentials, persona instructions, rate limiting,
 and conversation context. The frontend communicates with it via two HTTP endpoints: `POST /threads`
 (returns a thread UUID on page load) and `POST /chat` (accepts `user_input` + `thread_id`, returns
@@ -28,9 +28,9 @@ the seam contract is [contracts/emotion-seam.md](./contracts/emotion-seam.md).
 **Language/Version**: TypeScript 5.x in `strict` mode, targeting Node 20+ for tooling
 
 **Primary Dependencies**: Next.js (App Router) - `react` / `react-dom` - `pixi.js` pinned to the v7
-line - `pixi-live2d-display` (cubism4 entry point). No server-side dependencies (`@upstash/redis`
+line - `pixi-live2d-display` (cubism2 and cubism4 entry points). No server-side dependencies (`@upstash/redis`
 removed per D15).
-Vendored, not from npm: Cubism 4 Core (`live2dcubismcore.min.js`) and one Cubism 4 sample model.
+Vendored: Cubism 4 Core (`live2dcubismcore.min.js`), Cubism 2 Core (`live2d.js`), and the "Remu" sample model (`rem.json`, Cubism 2.1).
 
 **Styling**: Tailwind CSS v4 via `@tailwindcss/postcss` (D13). Utility classes in JSX for all
 layout, spacing, colour, and typography. `globals.css` retains only the Tailwind import, CSS custom
@@ -152,6 +152,8 @@ violations:
 **2026-09-26 — FR-005 random idle sequence**: A `/speckit-clarify` session updated the idle behavior to randomly select from a pool of neutral/subtle motions (excluding strong emotional reactions) with a random 3-8 second delay, rather than a continuous loop. The renderer contract `character-renderer.md` guarantees R1 and R2 were updated to reflect this sequence behavior. No new principle violations.
 
 **2026-09-27 — FR-042 character bottom anchor**: A `/speckit-clarify` session defined that the character must be rendered on the full screen height, attaching its bottom to the bottom of the screen with no empty space beneath it, allowing the message input to partially overlap the bottom. The renderer contract R13 and the renderer's layout logic must enforce bottom-anchoring. Implementation confirmed that the `Live2DModel` texture contains empty transparent margins (~10% top, ~15% bottom), so the renderer layout was updated to explicitly zoom by `1.33x` and shift downwards by `15%` of its scaled height to effectively crop the transparent padding. Additionally, `ChatPanel` padding was removed and its gradient opacity was reduced to ensure the character's feet are visibly flush behind the overlapping message input. No new principle violations.
+
+**2026-09-27 — Remu Model and Screenshot Update**: The model is switched to "Remu" (`rem.json`), a Cubism 2.1 model requiring `live2d.js` to be loaded in `layout.tsx`. Its motion arrays and part exclusivity files (`remu.physics.json`, `remu.pose.json`) are used with default settings. A new `still.png` screenshot must be captured using Playwright as a one-off script, substituting the old static fallback image.
 
 ## Project Structure
 

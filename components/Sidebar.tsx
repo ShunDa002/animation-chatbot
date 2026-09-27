@@ -227,7 +227,7 @@ export default function Sidebar({
         {/* Footer info */}
         {!isCollapsed && (
           <div className="p-3 border-t border-[var(--border)] text-[11px] text-[var(--text-muted)]">
-            <span>Live2D Model (1024113)</span>
+            <span>Live2D Model (Remu)</span>
           </div>
         )}
       </aside>

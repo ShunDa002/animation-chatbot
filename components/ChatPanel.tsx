@@ -79,7 +79,7 @@ export default function ChatPanel({ conversation, className = '' }: Props) {
       </div>
       
       <p className="attribution absolute bottom-1 left-0 right-0 text-[10px] text-slate-300/80 drop-shadow-sm text-center m-0 truncate pointer-events-none">
-        Character model: Live2D Model 1024113. Rendering by pixi-live2d-display over PixiJS.
+        Character model: Live2D Remu (Cubism 2.1). Rendering by pixi-live2d-display over PixiJS.
       </p>
     </section>
   );

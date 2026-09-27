@@ -5,6 +5,7 @@ import {
   EMOTION_MAP,
   IDLE_MOTION_INDICES,
   STRONG_EMOTION_MOTION_INDICES,
+  HAPPY_MOTION_INDICES,
 } from '@/lib/character/emotionMap';
 
 /**
@@ -163,30 +164,31 @@ vi.mock('pixi.js', () => {
   };
 });
 
-vi.mock('pixi-live2d-display/cubism4', () => {
-  return {
-    Live2DModel: {
-      registerTicker: vi.fn(),
-      from: vi.fn().mockImplementation(() => {
-        return Promise.resolve(createMockLive2DModel());
-      }),
-    },
-    MotionPriority: {
-      NONE: 0,
-      IDLE: 1,
-      NORMAL: 2,
-      FORCE: 3,
-    },
-    config: {
-      sound: false,
-      motionSync: false,
-    },
-    SoundManager: {
-      volume: 0,
-      play: vi.fn().mockResolvedValue(undefined),
-    },
-  };
-});
+const mockLive2DDisplay = {
+  Live2DModel: {
+    registerTicker: vi.fn(),
+    from: vi.fn().mockImplementation(() => {
+      return Promise.resolve(createMockLive2DModel());
+    }),
+  },
+  MotionPriority: {
+    NONE: 0,
+    IDLE: 1,
+    NORMAL: 2,
+    FORCE: 3,
+  },
+  config: {
+    sound: false,
+    motionSync: false,
+  },
+  SoundManager: {
+    volume: 0,
+    play: vi.fn().mockResolvedValue(undefined),
+  },
+};
+
+vi.mock('pixi-live2d-display/cubism4', () => mockLive2DDisplay);
+vi.mock('pixi-live2d-display/cubism2', () => mockLive2DDisplay);
 
 describe('Character Renderer Contract (T022)', () => {
   let canvas: HTMLCanvasElement;
@@ -197,20 +199,20 @@ describe('Character Renderer Contract (T022)', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     (window as any).Live2DCubismCore = {};
+    (window as any).Live2D = {};
     canvas = document.createElement('canvas');
     onUnavailable = vi.fn();
     onLabelChange = vi.fn();
     mockModelInstances.length = 0;
     resourceCount = 0;
 
-    const { Live2DModel } = await import('pixi-live2d-display/cubism4');
-    vi.mocked(Live2DModel.from).mockImplementation(() => {
+    mockLive2DDisplay.Live2DModel.from.mockImplementation(() => {
       return Promise.resolve(createMockLive2DModel()) as any;
     });
 
     defaultOptions = {
       canvas,
-      modelUrl: '/live2d/model/1024113.model3.json',
+      modelUrl: '/live2d/model/rem.json',
       reducedMotion: false,
       onUnavailable,
       onLabelChange,
@@ -223,6 +225,7 @@ describe('Character Renderer Contract (T022)', () => {
 
   it('R11: calls onUnavailable once and does not throw when Live2DCubismCore is missing', async () => {
     delete (window as any).Live2DCubismCore;
+    delete (window as any).Live2D;
 
     const handle = await createCharacter(defaultOptions);
     expect(onUnavailable).toHaveBeenCalledTimes(1);
@@ -257,14 +260,14 @@ describe('Character Renderer Contract (T022)', () => {
     const motion = model._getCurrentMotion();
     expect(motion).not.toBeNull();
     expect(motion.priority).toBe(1); // MotionPriority.IDLE
-    expect(motion.group).toBe('');
+    expect(motion.group).toBe(EMOTION_MAP.neutral.motionGroup);
 
     // Positive assertion: must be selected from the neutral/subtle motion pool
     expect(IDLE_MOTION_INDICES).toContain(motion.index);
 
     // Negative assertions: strong emotional reactions MUST NEVER be selected
-    expect(motion.index).not.toBe(EMOTION_MAP.angry.motionIndex); // 7
-    expect(motion.index).not.toBe(EMOTION_MAP.sad.motionIndex); // 6
+    expect(motion.index).not.toBe(EMOTION_MAP.angry.motionIndex);
+    expect(motion.index).not.toBe(EMOTION_MAP.sad.motionIndex);
     expect(STRONG_EMOTION_MOTION_INDICES).not.toContain(motion.index);
 
     // Sample across 20 idle cycles to statistically verify randomness and exclusion
@@ -288,10 +291,31 @@ describe('Character Renderer Contract (T022)', () => {
     handle.setEmotion('happy');
 
     expect(model._getActiveMotionCount()).toBe(1);
-    expect(model._getCurrentMotion().group).toBe(''); // 'happy' maps to ''
-    expect(model._getCurrentMotion().index).toBe(26); // 'happy' maps to index 26
+    expect(model._getCurrentMotion().group).toBe(EMOTION_MAP.happy.motionGroup);
+    expect(HAPPY_MOTION_INDICES).toContain(model._getCurrentMotion().index);
     expect(model._getCurrentExpression()).toBe('Normal'); // expression is unchanged (undefined in map)
     expect(handle.currentLabel).toBe('happy');
+  });
+
+  it('randomly selects from available happy motions when setEmotion("happy") is called', async () => {
+    const handle = await createCharacter(defaultOptions);
+    const model = mockModelInstances[0];
+
+    const randomSpy = vi.spyOn(Math, 'random');
+
+    randomSpy.mockReturnValue(0.1);
+    handle.setEmotion('happy');
+    expect(model._getCurrentMotion().index).toBe(HAPPY_MOTION_INDICES[Math.floor(0.1 * HAPPY_MOTION_INDICES.length)]);
+
+    randomSpy.mockReturnValue(0.5);
+    handle.setEmotion('happy');
+    expect(model._getCurrentMotion().index).toBe(HAPPY_MOTION_INDICES[Math.floor(0.5 * HAPPY_MOTION_INDICES.length)]);
+
+    randomSpy.mockReturnValue(0.9);
+    handle.setEmotion('happy');
+    expect(model._getCurrentMotion().index).toBe(HAPPY_MOTION_INDICES[Math.floor(0.9 * HAPPY_MOTION_INDICES.length)]);
+
+    randomSpy.mockRestore();
   });
 
   it('R4 & R2: after reaction completes, expression is unchanged and idle sequence resumes with 3-8s delay (FR-005, FR-008)', async () => {
@@ -299,8 +323,8 @@ describe('Character Renderer Contract (T022)', () => {
     const model = mockModelInstances[0];
 
     handle.setEmotion('surprised');
-    expect(model._getCurrentMotion().group).toBe('');
-    expect(model._getCurrentMotion().index).toBe(9);
+    expect(model._getCurrentMotion().group).toBe(EMOTION_MAP.surprised.motionGroup);
+    expect(model._getCurrentMotion().index).toBe(EMOTION_MAP.surprised.motionIndex);
     expect(model._getCurrentExpression()).toBe('Normal');
 
     // Motion completes
@@ -321,7 +345,7 @@ describe('Character Renderer Contract (T022)', () => {
     const resumedMotion = model._getCurrentMotion();
     expect(resumedMotion).not.toBeNull();
     expect(resumedMotion.priority).toBe(1); // MotionPriority.IDLE
-    expect(resumedMotion.group).toBe('');
+    expect(resumedMotion.group).toBe(EMOTION_MAP.neutral.motionGroup);
     expect(IDLE_MOTION_INDICES).toContain(resumedMotion.index);
     expect(STRONG_EMOTION_MOTION_INDICES).not.toContain(resumedMotion.index);
 

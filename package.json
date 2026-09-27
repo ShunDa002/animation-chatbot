@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "screenshot": "./node_modules/.bin/jiti scripts/capture-screenshot.ts",
     "verify:bundle": "node scripts/verify-no-secrets.mjs"
   },
   "dependencies": {

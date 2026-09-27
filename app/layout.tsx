@@ -27,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           If the file is absent, the renderer calls onUnavailable and the still image is shown - the
           page stays fully usable (FR-012).
         */}
+        <Script src="/live2d/core/live2d.js" strategy="beforeInteractive" />
         <Script src="/live2d/core/live2dcubismcore.min.js" strategy="beforeInteractive" />
         {children}
       </body>

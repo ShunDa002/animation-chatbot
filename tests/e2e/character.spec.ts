@@ -53,8 +53,8 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
   test('broken model URL falls back to still image while conversation stays usable (FR-012, R11)', async ({
     page,
   }) => {
-    // Intercept model3.json with a 404 to simulate broken modelUrl
-    await page.route('**/*.model3.json', (route) => route.abort('failed'));
+    // Intercept rem.json with a 404 to simulate broken modelUrl
+    await page.route('**/rem.json', (route) => route.abort('failed'));
 
     await page.goto('/');
 

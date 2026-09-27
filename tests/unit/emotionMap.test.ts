@@ -6,21 +6,22 @@ import {
   EMOTION_MAP,
   IDLE_MOTION_INDICES,
   STRONG_EMOTION_MOTION_INDICES,
+  HAPPY_MOTION_INDICES,
   type EmotionPresentation,
 } from '@/lib/character/emotionMap';
 import { EMOTION_LABELS } from '@/lib/character/labels';
 
 /**
- * T023 - Rig-inventory test obligation:
- * Read the vendored public/live2d/model/*.model3.json and assert every motionGroup
- * and expression named in the emotion map actually exists in the model.
+ * T023 / T143 - Rig-inventory test obligation:
+ * Read the vendored public/live2d/model/rem.json and assert every motionGroup
+ * and .mtn file named in the emotion map actually exists in the model.
  */
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const MODEL_DIR = join(ROOT, 'public', 'live2d', 'model');
-const MODEL_FILE = join(MODEL_DIR, '1024113.model3.json');
+const MODEL_FILE = join(MODEL_DIR, 'rem.json');
 
-describe('Emotion Map matches rig inventory (T023)', () => {
+describe('Emotion Map matches rig inventory (T023, T143)', () => {
   it('covers every member of the Emotion union', () => {
     for (const emotion of EMOTIONS) {
       expect(EMOTION_MAP[emotion]).toBeDefined();
@@ -33,13 +34,11 @@ describe('Emotion Map matches rig inventory (T023)', () => {
     }
   });
 
-  it('every motionGroup and expression exists in the vendored model manifest', () => {
+  it('every motionGroup and motion file exists in the vendored model manifest and on disk', () => {
     expect(existsSync(MODEL_FILE), `Model manifest not found at ${MODEL_FILE}`).toBe(true);
 
     const modelJson = JSON.parse(readFileSync(MODEL_FILE, 'utf8'));
-    const motions = modelJson.FileReferences?.Motions || {};
-    const expressionsList = modelJson.FileReferences?.Expressions || [];
-    const expressionNames = new Set(expressionsList.map((e: { Name: string }) => e.Name));
+    const motions = modelJson.motions || {};
 
     for (const [emotion, presentation] of Object.entries(EMOTION_MAP) as [Emotion, EmotionPresentation][]) {
       // 1. Motion group exists
@@ -54,34 +53,62 @@ describe('Emotion Map matches rig inventory (T023)', () => {
       ).toBe(true);
 
       if (presentation.motionIndex !== undefined) {
+        const motionEntry = motions[presentation.motionGroup][presentation.motionIndex];
         expect(
-          motions[presentation.motionGroup][presentation.motionIndex],
+          motionEntry,
           `Motion index ${presentation.motionIndex} does not exist in group "${presentation.motionGroup}"`
         ).toBeDefined();
+
+        if (motionEntry?.file) {
+          const mtnPath = join(MODEL_DIR, motionEntry.file);
+          expect(
+            existsSync(mtnPath),
+            `Motion file ${motionEntry.file} does not exist on disk at ${mtnPath}`
+          ).toBe(true);
+        }
       }
 
-      // 2. Expression exists in manifest or on disk (only if specified)
-      if (presentation.expression) {
-        const expFile = join(MODEL_DIR, 'expressions', `${presentation.expression}.exp3.json`);
-        const existsInManifest = expressionNames.has(presentation.expression);
-        const existsOnDisk = existsSync(expFile);
+      if (presentation.motionIndices !== undefined) {
+        expect(presentation.motionIndices.length).toBeGreaterThan(0);
+        for (const idx of presentation.motionIndices) {
+          const motionEntry = motions[presentation.motionGroup][idx];
+          expect(
+            motionEntry,
+            `Motion index ${idx} in motionIndices does not exist in group "${presentation.motionGroup}"`
+          ).toBeDefined();
 
-        expect(
-          existsInManifest || existsOnDisk,
-          `Expression "${presentation.expression}" for emotion "${emotion}" not found in manifest or on disk at ${expFile}`
-        ).toBe(true);
+          if (motionEntry?.file) {
+            const mtnPath = join(MODEL_DIR, motionEntry.file);
+            expect(
+              existsSync(mtnPath),
+              `Motion file ${motionEntry.file} does not exist on disk at ${mtnPath}`
+            ).toBe(true);
+          }
+        }
       }
     }
   });
 
-  it('idle motion pool contains valid neutral motions and strictly excludes strong emotions (FR-005, Phase 14)', () => {
+  it('happy emotion defines multiple motions in HAPPY_MOTION_INDICES', () => {
+    expect(HAPPY_MOTION_INDICES.length).toBeGreaterThan(1);
+    expect(EMOTION_MAP.happy.motionIndices).toEqual(HAPPY_MOTION_INDICES);
+    for (const happyIdx of HAPPY_MOTION_INDICES) {
+      expect(IDLE_MOTION_INDICES).not.toContain(happyIdx);
+      expect(STRONG_EMOTION_MOTION_INDICES).toContain(happyIdx);
+    }
+  });
+
+  it('idle motion pool contains valid neutral motions and strictly excludes strong emotions (FR-005, Phase 14, Phase 16)', () => {
     const modelJson = JSON.parse(readFileSync(MODEL_FILE, 'utf8'));
-    const rootMotions = modelJson.FileReferences?.Motions?.[''] || [];
+    const talkMotions = modelJson.motions?.[EMOTION_MAP.neutral.motionGroup] || [];
 
     // All idle motions must exist in the model
     expect(IDLE_MOTION_INDICES.length).toBeGreaterThan(0);
     for (const index of IDLE_MOTION_INDICES) {
-      expect(rootMotions[index], `Idle motion index ${index} missing in model3.json`).toBeDefined();
+      expect(talkMotions[index], `Idle motion index ${index} missing in rem.json`).toBeDefined();
+      if (talkMotions[index]?.file) {
+        expect(existsSync(join(MODEL_DIR, talkMotions[index].file))).toBe(true);
+      }
     }
 
     // Strong emotion indices must not overlap with idle motions
@@ -99,4 +126,3 @@ describe('Emotion Map matches rig inventory (T023)', () => {
     expect(STRONG_EMOTION_MOTION_INDICES).toContain(EMOTION_MAP.sad.motionIndex);
   });
 });
-
