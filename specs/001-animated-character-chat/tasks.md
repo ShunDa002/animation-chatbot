@@ -1036,3 +1036,24 @@ Each step adds value without breaking previous steps.
 - [X] T148 Full validation pass: run all tests (`npm test`, `npm run test:e2e`) to confirm the new model loads, the emotion maps validate, and the screenshot capture script executes successfully.
 
 **Checkpoint**: The app natively runs the Remu character model, responds emotionally with its unique motions, and features an up-to-date static fallback image.
+
+---
+
+## Phase 17: Cursor Tracking (FR-048)
+
+**Purpose**: Implement real-time cursor tracking (document-level) so the character's gaze and posture follow the visitor's pointer. The tracking must pause during reaction animations to prevent conflicting movements, smoothly return to center on touch release, and disable entirely if reduced-motion is preferred.
+
+**Depends on**: Phase 16.
+
+### Tests for Phase 17
+
+- [X] T149 [P] [US1] Update `tests/unit/renderer.test.ts` for R14: assert `setFocus(x, y)` correctly updates the model's focus controller, and that it has no effect when `reducedMotion` is true or while an `isReacting` state is active.
+- [X] T150 [P] [US1] Update E2E test `tests/e2e/character.spec.ts` for quickstart V12: simulate `pointermove` and `pointerup` events on the window, verify character tracking logic is invoked (FR-048), and verify tracking pauses during a reaction. Emulate `prefers-reduced-motion: reduce` and assert tracking is disabled entirely.
+
+### Implementation for Phase 17
+
+- [X] T151 [US1] Update `lib/character/renderer.ts`: add `setFocus(x: number, y: number)` to `CharacterHandle`. Implement it to call `model.focus(x, y)`. Maintain an `isReacting` boolean state that becomes true when a reaction starts and false when it ends. If `isReacting` or `reducedMotion` is true, `setFocus` should do nothing or smoothly return focus to `(0, 0)` (R14).
+- [X] T152 [US1] Update `components/CharacterStage.tsx`: in the `useEffect`, attach `pointermove`, `pointerup`, `pointercancel`, and `pointerleave` event listeners to the global `window`. Calculate normalized coordinates: `x = (event.clientX / window.innerWidth) * 2 - 1` and `y = (event.clientY / window.innerHeight) * 2 - 1` and pass them to `handle.setFocus(x, y)`. On `pointerup`, `pointercancel`, or `pointerleave`, call `handle.setFocus(0, 0)`. Clean up all event listeners on unmount (FR-048).
+- [X] T153 [US1] Full validation pass: run all tests (`npm test`, `npm run test:e2e`) to confirm no regressions and that pointer tracking works correctly.
+
+**Checkpoint**: The character tracks the mouse pointer dynamically, pausing during reactions and respecting reduced-motion preferences.

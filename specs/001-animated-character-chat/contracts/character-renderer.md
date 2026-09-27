@@ -14,6 +14,7 @@ import type { Emotion } from "@/lib/emotion";
 export interface CharacterHandle {
   setEmotion(emotion: Emotion): void;
   setThinking(thinking: boolean): void;
+  setFocus(x: number, y: number): void; // document-level normalized coordinates [-1, 1] (FR-048)
   resize(): void;
   destroy(): void;
   readonly ready: boolean;
@@ -51,6 +52,7 @@ emotion back and no chat state; the renderer still cannot talk to `lib/conversat
 | R11 | Model or WebGL failure calls `onUnavailable` exactly once and never throws into the caller | FR-012 |
 | R12 | No work on the render path exceeds one frame budget; nothing blocks the UI thread | Constitution IV |
 | R13 | The model is fully visible head-to-toe within the canvas at all times and anchored to the bottom with no empty space beneath it; when the container is smaller than the model's native size, the model is scaled down to fit entirely rather than cropped | FR-042 |
+| R14 | `setFocus(x, y)` adjusts the character's gaze and posture towards the given normalized coordinates. It pauses (returns to center or ignores) while a reaction is playing, and is entirely ignored if `reducedMotion` is true | FR-048, FR-014 |
 
 ## Load-order requirement
 
@@ -79,3 +81,4 @@ Stated so nobody adds them later thinking they were forgotten:
   (R11).
 - After `createCharacter` and after `resize()`, the model's rendered bounds are contained entirely
   within the canvas dimensions with its bottom resting precisely at the bottom boundary (no empty space beneath) — no part extends beyond the canvas boundary (aside from intentional UI overlap at the bottom) (R13).
+- `setFocus` correctly updates the model's focus controller, except when a reaction is playing or when `reducedMotion` is true, where it has no effect on motion (R14).

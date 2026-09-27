@@ -6,7 +6,7 @@
 
 ## Summary
 
-A single-page portfolio demo: a rigged 2D character animates above a chat panel, the visitor types,
+A single-page portfolio demo: a rigged 2D character animates above a chat panel, dynamically tracking the visitor's pointer across the screen. The visitor types,
 a language model replies as streaming text, and the character reacts with a matching animation and
 expression. No accounts, no persistence, free-tier inference.
 
@@ -56,7 +56,7 @@ character visible and animating within 3s of page load (SC-002).
 6-message history window, 150 requests/day global ceiling (FR-017, FR-022, FR-028); 20-second
 provider timeout with no automatic retry (FR-034); reduced-motion honoured before the first frame
 (FR-035); emotion vocabulary is the only cross-seam traffic (FR-020); character model must be fully
-visible head-to-toe at all times, scaled down to fit its container rather than cropped, and anchored to the bottom of the screen with no empty space beneath it (FR-042).
+visible head-to-toe at all times, scaled down to fit its container rather than cropped, and anchored to the bottom of the screen with no empty space beneath it (FR-042); character must dynamically track the pointer across the entire window, pausing during reactions, and honoring reduced-motion preferences (FR-048).
 
 **Scale/Scope**: Low, bursty portfolio traffic. One character, one conversation per visit, one API
 route, 4-8 emotional states. Roughly 20 source files.
@@ -152,6 +152,8 @@ violations:
 **2026-09-26 — FR-005 random idle sequence**: A `/speckit-clarify` session updated the idle behavior to randomly select from a pool of neutral/subtle motions (excluding strong emotional reactions) with a random 3-8 second delay, rather than a continuous loop. The renderer contract `character-renderer.md` guarantees R1 and R2 were updated to reflect this sequence behavior. No new principle violations.
 
 **2026-09-27 — FR-042 character bottom anchor**: A `/speckit-clarify` session defined that the character must be rendered on the full screen height, attaching its bottom to the bottom of the screen with no empty space beneath it, allowing the message input to partially overlap the bottom. The renderer contract R13 and the renderer's layout logic must enforce bottom-anchoring. Implementation confirmed that the `Live2DModel` texture contains empty transparent margins (~10% top, ~15% bottom), so the renderer layout was updated to explicitly zoom by `1.33x` and shift downwards by `15%` of its scaled height to effectively crop the transparent padding. Additionally, `ChatPanel` padding was removed and its gradient opacity was reduced to ensure the character's feet are visibly flush behind the overlapping message input. No new principle violations.
+
+**2026-09-27 — Cursor Tracking (FR-048)**: Added real-time cursor tracking (gaze, head orientation, body leaning) across the entire browser window. The tracking logic must respect touch devices (smooth return to center on release), pause during character reactions to prevent motion conflicts, and disable entirely when reduced motion is preferred (FR-014). This involves tracking `pointermove` on the `window` and calling `model.focus(x, y)`. No new principle violations.
 
 **2026-09-27 — Remu Model and Screenshot Update**: The model is switched to "Remu" (`rem.json`), a Cubism 2.1 model requiring `live2d.js` to be loaded in `layout.tsx`. Its motion arrays and part exclusivity files (`remu.physics.json`, `remu.pose.json`) are used with default settings. A new `still.png` screenshot must be captured using Playwright as a one-off script, substituting the old static fallback image.
 

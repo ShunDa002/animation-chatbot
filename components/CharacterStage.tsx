@@ -86,6 +86,7 @@ export default function CharacterStage({
           setStageLabel(EMOTION_LABELS[e] || 'calm');
         };
         (window as any).__setThinking = (t: boolean) => handle.setThinking(t);
+        (window as any).__setFocus = (x: number, y: number) => handle.setFocus(x, y);
       }
     });
 
@@ -94,9 +95,31 @@ export default function CharacterStage({
     };
     window.addEventListener('resize', onResize);
 
+    // Document-level pointer tracking (FR-048, D17, T152)
+    const onPointerMove = (event: PointerEvent) => {
+      if (!handleRef.current?.ready) return;
+      const x = (event.clientX / window.innerWidth) * 2 - 1;
+      const y = (event.clientY / window.innerHeight) * 2 - 1;
+      handleRef.current.setFocus(x, y);
+    };
+
+    const onPointerReset = () => {
+      if (!handleRef.current?.ready) return;
+      handleRef.current.setFocus(0, 0);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerReset);
+    window.addEventListener('pointercancel', onPointerReset);
+    window.addEventListener('pointerleave', onPointerReset);
+
     return () => {
       controller.abort();
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerReset);
+      window.removeEventListener('pointercancel', onPointerReset);
+      window.removeEventListener('pointerleave', onPointerReset);
 
       if (handleRef.current) {
         handleRef.current.destroy();
@@ -107,6 +130,7 @@ export default function CharacterStage({
         delete (window as any).__characterHandle;
         delete (window as any).__setEmotion;
         delete (window as any).__setThinking;
+        delete (window as any).__setFocus;
       }
     };
   }, [modelUrl, onUnavailableProp]);

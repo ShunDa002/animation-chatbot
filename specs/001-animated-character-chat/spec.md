@@ -22,6 +22,10 @@ nothing else — that is the entire vocabulary between them, so either side is r
 
 ### Session 2026-09-27
 
+- Q: Should the character's gaze follow the cursor everywhere on the entire browser window, or only when the cursor is over the character display area? → A: Entire browser window (document-level tracking).
+- Q: Should cursor tracking (head/body movement) be disabled when the visitor's device signals a reduced-motion preference (FR-014)? → A: Yes, disable tracking entirely to respect reduced motion.
+- Q: How should cursor tracking interact with the character's reaction and idle animations? → A: Tracking layers over idle, but pauses during a reaction animation.
+- Q: How should the character's gaze and posture tracking behave on touch devices (mobile/tablet) where there is no persistent mouse cursor? → A: Track the user's finger while touching, but smoothly return to center when released.
 - Q: How should the Live2D character be positioned vertically on the screen? → A: Render the character on the full screen height, attaching its bottom to the bottom of the screen with no empty space beneath it. It is acceptable for the message input to partially overlap the bottom of the character.
 - Q: The `remu.pose.json` file handles part exclusivity (like different outfits or accessories). Should the renderer configure a specific outfit for the new model, or just use the default configuration? → A: Use the model's default outfit and configuration as loaded.
 
@@ -287,6 +291,7 @@ a distinct, visibly different state during the wait and leaves it when text begi
 
 **Character behaviour**
 
+- **FR-048**: The character MUST dynamically track the pointer in real-time across the entire browser window (document-level), adjusting gaze (pupils X/Y), head orientation (yaw and pitch), and body leaning towards the pointer's screen position (triggering secondary physics on hair/accessories). On touch devices, it MUST track the finger while touching and smoothly return to center when released. Tracking MUST layer over idle animations, but MUST pause during a reaction animation to prevent conflicting movements.
 - **FR-005**: The character MUST begin an idle animation loop automatically on load, with no visitor
   action, and MUST return to that loop whenever no other animation is playing. The idle behavior MUST randomly select from a pool of neutral or subtle motions (excluding strong emotional reactions like Anger or Cry) and play them with a brief random delay (e.g., 3-8 seconds) between animations to appear lifelike.
 - **FR-006**: The character MUST support a closed, documented set of emotional states, sized to what
@@ -310,8 +315,8 @@ a distinct, visibly different state during the wait and leaves it when text begi
 - **FR-013**: Repeated mounting, unmounting, or resizing of the character display MUST NOT leave
   duplicate characters on screen, accumulate graphics resources, or degrade animation smoothness.
 - **FR-014**: When the visitor's platform signals a reduced-motion preference, the character MUST
-  still convey emotional state but MUST NOT convey it through movement: idle drift and reaction
-  animations are suppressed, and each emotional state is shown as its still expression or pose,
+  still convey emotional state but MUST NOT convey it through movement: idle drift, reaction
+  animations, and cursor tracking are suppressed, and each emotional state is shown as its still expression or pose,
   reached by a brief cross-fade rather than a hard cut or a played animation. Conversation MUST remain
   fully functional, and the emotion seam MUST be unchanged — the conversation layer still hands over
   one emotional state and remains unaware that motion is suppressed.

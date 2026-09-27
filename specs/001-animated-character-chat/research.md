@@ -380,6 +380,23 @@ headers. This project assumes CORS is configured correctly and does not proxy to
 
 ---
 
+## D17. Pointer Tracking implementation
+
+**Decision**: 
+1. Attach `pointermove` and `pointerup`/`pointercancel`/`pointerleave` event listeners to the global `window` object in the React component managing the renderer (`CharacterStage.tsx` or similar), instead of Pixi's canvas, to enable document-level tracking.
+2. Calculate normalized coordinates `(x, y)` between `-1` and `1` relative to the window dimensions: `x = (event.clientX / window.innerWidth) * 2 - 1`.
+3. Pass these coordinates to the renderer, which calls `model.focus(x, y)`.
+4. To handle the pause-during-reaction requirement (FR-048), the renderer will maintain an `isReacting` flag. While `true`, `model.focus()` calls are ignored or overridden to smoothly return to `0, 0` depending on the desired visual effect.
+5. On touch devices, `pointerup` (finger release) will explicitly trigger a smooth return to `0, 0` by passing those coordinates or resetting focus.
+
+**Rationale**: `pixi-live2d-display` natively handles the mapping of `focus(x,y)` to the relevant Live2D parameters (`ParamEyeBallX`, `ParamAngleX`, etc.) through its internal `focusController`. Manually updating parameters would reinvent this logic. Binding to `window` rather than the Pixi interaction manager ensures the character tracks the pointer even when the visitor interacts with the chat panel or sidebar (FR-048).
+
+**Alternatives considered**:
+- Pixi's interaction manager: Only tracks events over the canvas. Fails the document-level tracking requirement.
+- CSS `perspective` / `transform` on the canvas: Only moves the flat canvas, missing the Live2D parallax and rigging effects.
+
+---
+
 ## Residual risks
 
 | Risk | Impact | Mitigation |

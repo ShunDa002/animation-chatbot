@@ -143,6 +143,7 @@ state (FR-005, FR-010).
 | thinking | `boolean` | Set through `setThinking` |
 | reducedMotion | `boolean` | Read once before the first frame (FR-035) |
 | ready | `boolean` | False until the model has loaded; false permanently on load failure (FR-012) |
+| isReacting | `boolean` | True while a reaction animation plays; pauses cursor tracking (FR-048) |
 
 ### State transitions
 

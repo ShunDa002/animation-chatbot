@@ -98,6 +98,9 @@ const createMockLive2DModel = () => {
           }),
         },
       },
+      focusController: {
+        focus: vi.fn(),
+      },
     },
     motion: vi.fn().mockImplementation(function (group: string, index?: number, priority?: number) {
       currentMotion = { group, index, priority };
@@ -452,4 +455,57 @@ describe('Character Renderer Contract (T022)', () => {
     // Assert landscape bounds containment and bottom anchoring after resize
     assertBoundsContainedAndBottomAnchored(containerWidth, containerHeight);
   });
+
+  describe('R14: setFocus pointer tracking (FR-048, T149)', () => {
+    it('updates model focus and focusController with clamped coordinates', async () => {
+      const handle = await createCharacter(defaultOptions);
+      const model = mockModelInstances[0];
+
+      handle.setFocus(0.4, -0.6);
+      expect(model.focus).toHaveBeenCalledWith(0.4, -0.6);
+      expect(model.internalModel.focusController.focus).toHaveBeenCalledWith(0.4, 0.6);
+
+      // Clamps out-of-range coordinates to [-1, 1]
+      handle.setFocus(1.5, -2.0);
+      expect(model.focus).toHaveBeenCalledWith(1, -1);
+      expect(model.internalModel.focusController.focus).toHaveBeenCalledWith(1, 1);
+    });
+
+    it('has no effect when reducedMotion is true', async () => {
+      const handle = await createCharacter({
+        ...defaultOptions,
+        reducedMotion: true,
+      });
+      const model = mockModelInstances[0];
+
+      handle.setFocus(0.5, 0.5);
+      expect(model.focus).not.toHaveBeenCalled();
+      expect(model.internalModel.focusController.focus).not.toHaveBeenCalled();
+    });
+
+    it('pauses while an isReacting reaction is playing and resumes after reaction completes', async () => {
+      const handle = await createCharacter(defaultOptions);
+      const model = mockModelInstances[0];
+
+      // Trigger reaction
+      handle.setEmotion('happy');
+      expect(model._getCurrentMotion()?.group).toBe(EMOTION_MAP.happy.motionGroup);
+      model.focus.mockClear();
+      model.internalModel.focusController.focus.mockClear();
+
+      // While reaction is playing, setFocus should be ignored
+      handle.setFocus(0.8, -0.2);
+      expect(model.focus).not.toHaveBeenCalled();
+      expect(model.internalModel.focusController.focus).not.toHaveBeenCalled();
+
+      // Reaction motion completes
+      model._completeMotion();
+
+      // Now setFocus is processed again
+      handle.setFocus(0.8, -0.2);
+      expect(model.focus).toHaveBeenCalledWith(0.8, -0.2);
+      expect(model.internalModel.focusController.focus).toHaveBeenCalledWith(0.8, 0.2);
+    });
+  });
 });
+

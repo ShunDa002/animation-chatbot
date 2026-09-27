@@ -179,6 +179,16 @@ counts flat, no growth in reply-handling latency, animation still smooth.
 
 **Proves**: FR-013, SC-011.
 
+### V12. Pointer Tracking - FR-048
+
+1. Move the pointer across the entire browser window.
+2. The character's gaze and head orientation track the pointer in real-time.
+3. Trigger a reaction animation; the tracking pauses (character ignores pointer or smoothly returns to center) until the reaction ends, then resumes.
+4. On a touch device (or DevTools touch emulation), touch and drag to track; on release, the character smoothly returns to center.
+5. Emulate `prefers-reduced-motion: reduce` before page load; pointer tracking is disabled entirely.
+
+**Proves**: FR-048, FR-014 (reduced motion).
+
 ---
 
 ## Before deploying

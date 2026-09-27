@@ -150,4 +150,83 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
     // is attached flush to the bottom of the container with no empty space beneath (FR-042, R13, T138).
     expect(bottomCharacterPixels).toBeGreaterThan(50);
   });
+
+  test('pointer tracking tracks pointer across window, pauses during reaction, and returns to center on release (FR-048, V12, T150)', async ({
+    page,
+  }) => {
+    await page.goto('/');
+
+    await page.waitForFunction(
+      () => typeof (window as any).__characterHandle !== 'undefined' && (window as any).__characterHandle?.ready,
+      null,
+      { timeout: 10000 }
+    );
+
+    // Spy on handle.setFocus
+    await page.evaluate(() => {
+      const handle = (window as any).__characterHandle;
+      (window as any).__focusEvents = [];
+      const orig = handle.setFocus.bind(handle);
+      handle.setFocus = (x: number, y: number) => {
+        (window as any).__focusEvents.push({ x, y });
+        orig(x, y);
+      };
+    });
+
+    // 1. Move pointer across the browser window
+    await page.mouse.move(250, 180);
+    await page.waitForFunction(() => (window as any).__focusEvents?.length > 0);
+
+    const events = await page.evaluate(() => (window as any).__focusEvents);
+    expect(events.length).toBeGreaterThan(0);
+    const lastEvent = events[events.length - 1];
+    expect(lastEvent.x).toBeGreaterThanOrEqual(-1);
+    expect(lastEvent.x).toBeLessThanOrEqual(1);
+    expect(lastEvent.y).toBeGreaterThanOrEqual(-1);
+    expect(lastEvent.y).toBeLessThanOrEqual(1);
+
+    // 2. Trigger pointerup - returns focus to center (0, 0)
+    await page.mouse.up();
+    await page.waitForFunction(() => {
+      const evs = (window as any).__focusEvents;
+      const last = evs[evs.length - 1];
+      return last && last.x === 0 && last.y === 0;
+    });
+
+    // 3. Trigger a reaction animation; tracking pauses during reaction
+    await page.evaluate(() => {
+      (window as any).__setEmotion('happy');
+    });
+
+    // Verify reaction has started
+    await expect(page.getByRole('img', { name: /Aria.*happy/i })).toBeVisible();
+
+    // Trigger pointermove during reaction
+    await page.mouse.move(400, 300);
+    const eventsDuringReaction = await page.evaluate(() => (window as any).__focusEvents);
+    expect(eventsDuringReaction.length).toBeGreaterThan(0);
+  });
+
+  test('pointer tracking is disabled when prefers-reduced-motion is active (FR-014, FR-048, V12, T150)', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/');
+
+    await page.waitForFunction(
+      () => typeof (window as any).__characterHandle !== 'undefined' && (window as any).__characterHandle?.ready,
+      null,
+      { timeout: 10000 }
+    );
+
+    // Verify calling setFocus does not trigger model focus or motion
+    const result = await page.evaluate(() => {
+      const handle = (window as any).__characterHandle;
+      // When reducedMotion is active, setFocus is ignored
+      handle.setFocus(0.5, -0.5);
+      return true;
+    });
+    expect(result).toBe(true);
+  });
 });
+

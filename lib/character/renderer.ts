@@ -14,6 +14,7 @@ import { applyReducedMotion } from './reducedMotion';
 export interface CharacterHandle {
   setEmotion(emotion: Emotion): void;
   setThinking(thinking: boolean): void;
+  setFocus(x: number, y: number): void;
   resize(): void;
   destroy(): void;
   readonly ready: boolean;
@@ -33,6 +34,7 @@ function createFallbackHandle(initialLabel = 'calm'): CharacterHandle {
   return {
     setEmotion: () => {},
     setThinking: () => {},
+    setFocus: () => {},
     resize: () => {},
     destroy: () => {},
     ready: false,
@@ -319,6 +321,23 @@ export async function createCharacter(options: CreateOptions): Promise<Character
 
           if (!reducedMotion && typeof (model as any).focus === 'function') {
             (model as any).focus(0, 0);
+          }
+        }
+      },
+      setFocus(x: number, y: number) {
+        if (isDestroyed || reducedMotion || isPlayingReaction) return;
+        const clampedX = Math.max(-1, Math.min(1, x));
+        const clampedY = Math.max(-1, Math.min(1, y));
+
+        if (model) {
+          if (typeof (model as any).focus === 'function') {
+            (model as any).focus(clampedX, clampedY);
+          }
+          if (
+            model.internalModel?.focusController &&
+            typeof model.internalModel.focusController.focus === 'function'
+          ) {
+            model.internalModel.focusController.focus(clampedX, -clampedY);
           }
         }
       },
