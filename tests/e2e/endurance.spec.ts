@@ -44,7 +44,7 @@ test.describe('Endurance and resource stability (T071)', () => {
 
       const bubble = page.locator('.message.character').nth(i);
       await expect(bubble).toBeVisible({ timeout: 15_000 });
-      await expect(bubble).toHaveAttribute('data-status', 'complete', { timeout: 15_000 });
+      await expect(bubble).toHaveAttribute('data-status', /complete/, { timeout: 15_000 });
 
       durations.push(Date.now() - start);
 

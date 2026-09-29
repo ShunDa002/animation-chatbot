@@ -116,7 +116,7 @@ test.describe('V2: a full turn', () => {
     for (let i = 0; i < 4; i += 1) {
       await send(page, `message number ${i}`);
       await expect(characterBubbles(page)).toHaveCount(i + 1, { timeout: 10_000 });
-      await expect(characterBubbles(page).nth(i)).toHaveAttribute('data-status', 'complete', {
+      await expect(characterBubbles(page).nth(i)).toHaveAttribute('data-status', /complete/, {
         timeout: 10_000,
       });
     }

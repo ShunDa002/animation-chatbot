@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NEUTRAL, type Emotion } from '@/lib/emotion';
-import { createCueReader } from '@/lib/conversation/cue';
 import { isSendable, type Message } from '@/lib/conversation/limits';
+import { createStreamController, type StreamController } from '@/lib/conversation/stream-controller';
 import { createThread, sendMessage } from '@/lib/conversation/backend';
 import { copy } from '@/lib/ui/copy';
 
@@ -46,15 +46,6 @@ export interface Conversation {
   send(draft: string): void;
 }
 
-/**
- * How long a reply that has already begun may go silent before the client gives up on it.
- *
- * Not the same thing as FR-034's 20-second provider deadline, which covers a reply that never
- * starts. This one covers a reply that starts and then stops, and it is deliberately shorter: the
- * visitor is already looking at text, so the sooner they can act the better.
- */
-const STALL_TIMEOUT_MS = 10_000;
-
 let sequence = 0;
 function nextId(prefix: string): string {
   sequence += 1;
@@ -86,9 +77,11 @@ export function useConversation(): Conversation {
   const inFlightRef = useRef(false);
   const [inFlight, setInFlight] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const streamControllerRef = useRef<StreamController | null>(null);
+  const currentRequestIdRef = useRef<string | null>(null);
   const messagesRef = useRef<Message[]>([]);
-  /** Set by the stall watchdog so the abort handler can tell a stall from an unmount. */
-  const stalledRef = useRef(false);
+  const pendingTextRef = useRef<string | null>(null);
+  const rafIdRef = useRef<number | null>(null);
 
   // Kept in step through an effect rather than assigned during render: the send handler and the
   // stall handler both need the latest log, and neither runs during render.
@@ -128,15 +121,28 @@ export function useConversation(): Conversation {
   // A visitor who navigates away or reloads mid-reply abandons the request cleanly, so no further
   // work is charged to the demo's allowance (spec Edge Cases).
   useEffect(() => {
-    return () => abortRef.current?.abort();
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      streamControllerRef.current?.cancel();
+      abortRef.current?.abort();
+    };
   }, []);
 
   const finish = useCallback((next: ConversationStatus, noticeText: string | null) => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    pendingTextRef.current = null;
     inFlightRef.current = false;
     setInFlight(false);
     setStatus(next);
     setNotice(noticeText);
     abortRef.current = null;
+    streamControllerRef.current = null;
   }, []);
 
   /** Mark the reply complete, hand the emotion across the seam, and announce it once. */
@@ -144,7 +150,7 @@ export function useConversation(): Conversation {
     (replyId: string, text: string, emotion: Emotion) => {
       setMessages((current) => {
         const hasBubble = current.some((message) => message.id === replyId);
-        const completed: Message = { id: replyId, author: 'character', text, status: 'complete' };
+        const completed: Message = { id: replyId, author: 'character', text, status: 'completed' };
         return hasBubble
           ? current.map((message) => (message.id === replyId ? completed : message))
           : [...current, completed];
@@ -182,7 +188,7 @@ export function useConversation(): Conversation {
         id: nextId('visitor'),
         author: 'visitor',
         text,
-        status: 'complete',
+        status: 'completed',
       };
       const replyId = nextId('character');
 
@@ -206,99 +212,171 @@ export function useConversation(): Conversation {
           }
 
           const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          const cue = createCueReader();
-          let started = false;
+          const requestId = nextId('req');
+          currentRequestIdRef.current = requestId;
 
-          /**
-           * The stall watchdog.
-           *
-           * FR-034 forbids the endpoint cutting off a reply that has already begun streaming, and it
-           * is right to: the visitor is reading it. But a provider that sends three words and then
-           * hangs forever would otherwise leave the turn in flight for the rest of the visit, while
-           * the spec's edge case for a stalled reply says the partial text stays visible *and the
-           * visitor can send again*. Nothing on the server can deliver that second half without
-           * violating FR-034, so it belongs here.
-           *
-           * Every chunk resets the timer, so a slow-but-alive stream is never interrupted.
-           */
-          let stallTimer: ReturnType<typeof setTimeout> | undefined;
-          const resetStallTimer = (): void => {
-            clearTimeout(stallTimer);
-            stallTimer = setTimeout(() => {
-              stalledRef.current = true;
-              controller.abort();
-            }, STALL_TIMEOUT_MS);
-          };
-
-          try {
-            resetStallTimer();
-
-            for (;;) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              resetStallTimer();
-
-              const visible = cue.push(decoder.decode(value, { stream: true }));
-
-              if (!started) {
-                // First text has arrived: the thinking state ends here, not when the reply
-                // completes (FR-010).
-                started = true;
+          const streamController = createStreamController({
+            requestId,
+            onStatus: (nextStatus, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              if (nextStatus === 'streaming') {
                 setStatus('streaming');
-                setMessages((current) => [
-                  ...current,
-                  { id: replyId, author: 'character', text: visible, status: 'streaming' },
-                ]);
+                setMessages((current) => {
+                  const hasBubble = current.some((message) => message.id === replyId);
+                  return hasBubble
+                    ? current.map((message) =>
+                        message.id === replyId ? { ...message, status: 'streaming' } : message,
+                      )
+                    : [...current, { id: replyId, author: 'character', text: '', status: 'streaming' }];
+                });
+              }
+            },
+            onText: (visible, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              setStatus('streaming');
+              pendingTextRef.current = visible;
+              if (typeof requestAnimationFrame === 'function') {
+                if (rafIdRef.current === null) {
+                  rafIdRef.current = requestAnimationFrame(() => {
+                    rafIdRef.current = null;
+                    const latest = pendingTextRef.current;
+                    if (latest !== null) {
+                      setMessages((current) => {
+                        const hasBubble = current.some((message) => message.id === replyId);
+                        return hasBubble
+                          ? current.map((message) =>
+                              message.id === replyId ? { ...message, text: latest } : message,
+                            )
+                          : [...current, { id: replyId, author: 'character', text: latest, status: 'streaming' }];
+                      });
+                    }
+                  });
+                }
               } else {
+                setMessages((current) => {
+                  const hasBubble = current.some((message) => message.id === replyId);
+                  return hasBubble
+                    ? current.map((message) =>
+                        message.id === replyId ? { ...message, text: visible } : message,
+                      )
+                    : [...current, { id: replyId, author: 'character', text: visible, status: 'streaming' }];
+                });
+              }
+            },
+            onComplete: (completedText, emotion, _metrics, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              pendingTextRef.current = null;
+              if (completedText.trim().length === 0) {
+                setMessages((current) => current.filter((message) => message.id !== replyId));
+                setEmotion(NEUTRAL);
+                finish('error', copy.failedEmpty);
+                return;
+              }
+              completeReply(replyId, completedText, emotion);
+            },
+            onError: (errorMessage, partialText, emotion, _metrics, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              pendingTextRef.current = null;
+              if (partialText.trim().length > 0) {
                 setMessages((current) =>
                   current.map((message) =>
-                    message.id === replyId ? { ...message, text: visible } : message,
+                    message.id === replyId ? { ...message, text: partialText, status: 'error' } : message,
                   ),
                 );
+              } else {
+                setMessages((current) => current.filter((message) => message.id !== replyId));
               }
-            }
-          } finally {
-            clearTimeout(stallTimer);
-          }
-
-          const result = cue.end();
-
-          if (result.isEmpty) {
-            // Nothing to show. The partial bubble, if one was created, is removed rather than left
-            // blank, and the character stays neutral (spec Edge Cases, FR-019).
-            setMessages((current) => current.filter((message) => message.id !== replyId));
-            setEmotion(NEUTRAL);
-            finish('error', copy.failedEmpty);
-            return;
-          }
-
-          completeReply(replyId, result.text, result.emotion);
-        } catch (error) {
-          const aborted = error instanceof DOMException && error.name === 'AbortError';
-
-          if (aborted && stalledRef.current) {
-            // A reply that started and then stopped. Nothing already shown is retracted: the partial
-            // text stays exactly as the visitor last saw it, marked complete so it can travel onward
-            // as history, and the turn ends so another send is possible (spec Edge Cases, FR-023).
-            stalledRef.current = false;
-            const partial = messagesRef.current.find((message) => message.id === replyId);
-            if (partial && partial.text.trim().length > 0) {
+              setEmotion(emotion);
+              finish('error', errorMessage || copy.failedGeneric);
+            },
+            onInterrupted: (partialText, emotion, _metrics, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              pendingTextRef.current = null;
+              if (partialText.trim().length > 0) {
+                setMessages((current) =>
+                  current.map((message) =>
+                    message.id === replyId ? { ...message, text: partialText, status: 'interrupted' } : message,
+                  ),
+                );
+                setEmotion(emotion);
+                finish('error', copy.failedStalled);
+              } else {
+                setMessages((current) => current.filter((message) => message.id !== replyId));
+                setEmotion(NEUTRAL);
+                finish('error', copy.failedEmpty);
+              }
+            },
+            onCancelled: (partialText, emotion, metrics, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              pendingTextRef.current = null;
+              if (metrics.outcome === 'stalled') {
+                if (partialText.trim().length > 0) {
+                  setMessages((current) =>
+                    current.map((message) =>
+                      message.id === replyId ? { ...message, text: partialText, status: 'interrupted' } : message,
+                    ),
+                  );
+                  setEmotion(NEUTRAL);
+                  finish('error', copy.failedStalled);
+                  return;
+                }
+                finish('error', copy.failedTimeout);
+                return;
+              }
+              if (partialText.trim().length > 0) {
+                setMessages((current) =>
+                  current.map((message) =>
+                    message.id === replyId ? { ...message, text: partialText, status: 'cancelled' } : message,
+                  ),
+                );
+              } else {
+                setMessages((current) => current.filter((message) => message.id !== replyId));
+              }
+              setEmotion(emotion);
+              finish('idle', null);
+            },
+            onToolUpdate: (toolCalls, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
               setMessages((current) =>
                 current.map((message) =>
-                  message.id === replyId ? { ...message, status: 'complete' } : message,
+                  message.id === replyId ? { ...message, toolCalls } : message,
                 ),
               );
-              setEmotion(NEUTRAL);
-              finish('error', copy.failedStalled);
-              return;
-            }
-            finish('error', copy.failedTimeout);
-            return;
-          }
+            },
+          });
+          streamControllerRef.current = streamController;
 
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              streamController.processChunk(value);
+            }
+          }
+          streamController.end();
+        } catch (error) {
+          if (rafIdRef.current !== null) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+          }
+          const aborted = error instanceof DOMException && error.name === 'AbortError';
           if (aborted) {
-            // Unmount or deliberate abandonment. Not a failure to report to anyone.
             inFlightRef.current = false;
             return;
           }

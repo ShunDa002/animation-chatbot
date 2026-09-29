@@ -80,7 +80,7 @@ test.describe('Character reacts to what it says (US3)', () => {
       const label = EMOTION_LABELS[emotion];
       const regex = new RegExp(`Aria.*${label}`, 'i');
       await expect(page.getByRole('img', { name: regex })).toBeVisible({ timeout: 10_000 });
-      await expect(bubble).toHaveAttribute('data-status', 'complete', { timeout: 10_000 });
+      await expect(bubble).toHaveAttribute('data-status', /complete/, { timeout: 10_000 });
     }
 
     await expectCanSendAgain(page, 5000);

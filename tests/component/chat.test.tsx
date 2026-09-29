@@ -13,7 +13,7 @@ import { NEUTRAL } from '@/lib/emotion';
 // T043 & T116. Behaviour, not internals: what the visitor sees and what a screen reader is told.
 
 function message(partial: Partial<Message> & Pick<Message, 'author' | 'text'>): Message {
-  return { id: partial.text.slice(0, 10), status: 'complete', ...partial };
+  return { id: partial.text.slice(0, 10), status: 'completed', ...partial };
 }
 
 function mockConversation(overrides: Partial<Conversation> = {}): Conversation {

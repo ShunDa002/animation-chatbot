@@ -43,6 +43,8 @@ export const copy = {
   failedEmpty: 'Aria did not have anything to say to that. Try asking another way.',
   /** A reply that started and then stopped. What arrived stays on screen (spec Edge Cases). */
   failedStalled: 'Aria stopped mid-sentence. You can send another message.',
+  failedInterrupted: 'Aria stopped mid-sentence. You can send another message.',
+  replyCancelled: 'The reply was cancelled.',
   limited: 'The demo is temporarily limited. Please try again later.',
   failedSend: 'That message could not be sent.',
   /** Shown when thread creation fails on load (FR-045). Visitor reloads to reconnect. */

@@ -5,10 +5,18 @@
  */
 
 import { MAX_INPUT_CHARACTERS } from '@/lib/limits';
+import type { ToolCallRecord } from './stream-types';
 
 export { MAX_INPUT_CHARACTERS };
 
-export type MessageStatus = 'complete' | 'streaming' | 'failed';
+export type MessageStatus =
+  | 'pending'
+  | 'streaming'
+  | 'completed'
+  | 'cancelled'
+  | 'interrupted'
+  | 'error';
+
 export type MessageAuthor = 'visitor' | 'character';
 
 export interface Message {
@@ -17,6 +25,7 @@ export interface Message {
   /** Display text. The cue has already been stripped (FR-018). */
   text: string;
   status: MessageStatus;
+  toolCalls?: ToolCallRecord[];
 }
 
 /** How many characters the visitor may still type. Never negative. */
