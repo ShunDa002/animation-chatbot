@@ -115,14 +115,27 @@ export function createStreamController(options: StreamControllerOptions): Stream
       countEvent('tool_call_delta');
 
       let record: ToolCallRecord | undefined;
+
+      // 1. If explicit tool_call_id is provided, look it up in toolCalls
       if (event.tool_call_id) {
         record = toolCalls.get(event.tool_call_id);
       }
+
+      // 2. If not found by ID, look for an active (unfinished) record matching tool_call_index
       if (!record && event.tool_call_index !== null && event.tool_call_index !== undefined) {
-        record = toolCalls.get(`index-${event.tool_call_index}`);
-        if (!record) {
+        const indexKey = `index-${event.tool_call_index}`;
+        const indexRecord = toolCalls.get(indexKey);
+        if (
+          indexRecord &&
+          (indexRecord.status === 'preparing' || indexRecord.status === 'generating_args')
+        ) {
+          record = indexRecord;
+        } else {
           for (const r of toolCalls.values()) {
-            if (r.toolCallIndex === event.tool_call_index) {
+            if (
+              r.toolCallIndex === event.tool_call_index &&
+              (r.status === 'preparing' || r.status === 'generating_args')
+            ) {
               record = r;
               break;
             }
@@ -130,12 +143,30 @@ export function createStreamController(options: StreamControllerOptions): Stream
         }
       }
 
+      // 3. If still not found and no ID/index, look for an active tool with matching name or preparing
+      if (!record && !event.tool_call_id && (event.tool_call_index === null || event.tool_call_index === undefined)) {
+        for (const r of toolCalls.values()) {
+          if (r.status === 'preparing' || r.status === 'generating_args') {
+            if (!event.tool_name || !r.toolName || r.toolName === event.tool_name) {
+              record = r;
+              break;
+            }
+          }
+        }
+      }
+
+      // 4. If no active record matched, this is a new tool call!
       if (!record) {
-        const idKey =
-          event.tool_call_id ??
-          (event.tool_call_index !== null && event.tool_call_index !== undefined
-            ? `index-${event.tool_call_index}`
-            : `temp-${toolCalls.size}`);
+        let idKey = event.tool_call_id;
+        if (!idKey) {
+          if (event.tool_call_index !== null && event.tool_call_index !== undefined) {
+            idKey = toolCalls.has(`index-${event.tool_call_index}`)
+              ? `index-${event.tool_call_index}-${toolCalls.size}`
+              : `index-${event.tool_call_index}`;
+          } else {
+            idKey = `temp-${toolCalls.size}`;
+          }
+        }
 
         record = {
           id: idKey,
@@ -186,6 +217,28 @@ export function createStreamController(options: StreamControllerOptions): Stream
       const id = event.tool_call_id;
       let record = id ? toolCalls.get(id) : undefined;
 
+      if (!record && id) {
+        for (const r of toolCalls.values()) {
+          if (r.toolCallId === id) {
+            record = r;
+            break;
+          }
+        }
+      }
+
+      // If not matched by id (or no id provided), correlate with an active tool call waiting for result
+      if (!record) {
+        const activeRecords = Array.from(toolCalls.values()).filter(
+          (r) => r.status === 'generating_args' || r.status === 'preparing',
+        );
+        if (event.tool_name) {
+          record = activeRecords.find((r) => r.toolName === event.tool_name);
+        }
+        if (!record && activeRecords.length > 0) {
+          record = activeRecords[0];
+        }
+      }
+
       if (!record) {
         // Try finding by any matching record
         console.warn('Stream controller: unmatched tool_result event received', event);
@@ -209,6 +262,9 @@ export function createStreamController(options: StreamControllerOptions): Stream
         record.status = event.status === 'error' ? 'failed' : 'completed';
         if (event.status === 'error') {
           record.error = String(event.content);
+        }
+        if (id && !record.toolCallId) {
+          record.toolCallId = id;
         }
       }
 

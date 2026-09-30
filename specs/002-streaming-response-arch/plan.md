@@ -11,6 +11,7 @@ Replace the current opaque text-stream consumption in `useConversation` with a s
 1. **NDJSON parser** — buffers, frames, and JSON-parses newline-delimited records from the byte stream.
 2. **Event dispatcher** — validates the `type` field and required per-type fields, then routes each event to the correct handler.
 3. **Stream controller** — orchestrates a per-request context holding the parser, dispatcher, tool-call records, CueReader, metrics, stall timer, and abort controller.
+4. **ToolActivity Component** — collapsible accordion UI that groups sequential tool calls without overwriting previous ones, separating raw arguments/results from normal conversational text, and remaining visible post-generation.
 
 The existing `CueReader` is preserved: it receives each `token.content` incrementally (clarification Q1). The existing `backend.ts` transport and `useConversation` hook are refactored, not replaced. All new modules live in `lib/conversation/` alongside existing code.
 
@@ -77,6 +78,10 @@ lib/conversation/
 ├── stream-controller.ts # NEW — per-request orchestrator (context, metrics, stall timer)
 └── stream-types.ts      # NEW — shared type definitions for events, tool records, metrics
 
+components/
+├── MessageLog.tsx       # Existing — refactored to render ToolActivity
+└── ToolActivity.tsx     # NEW — collapsible accordion grouping sequential tool calls, remaining visible post-generation
+
 tests/unit/
 ├── cue.test.ts          # Existing — CueReader tests (unchanged, regression guard)
 ├── ndjson-parser.test.ts    # NEW — chunk splitting, multi-record, blank lines, CR/LF
@@ -84,7 +89,7 @@ tests/unit/
 └── stream-controller.test.ts # NEW — end-to-end stream lifecycle, stall, cancel, metrics
 ```
 
-**Structure Decision**: All new code lands in `lib/conversation/` — the existing home for streaming logic. Four new files (3 modules + 1 types file) keep responsibilities isolated. No new directories needed. The three test files mirror the three modules exactly.
+**Structure Decision**: Stream pipeline code lands in `lib/conversation/`. The new `ToolActivity.tsx` lands in `components/` alongside existing UI components. No new directories needed. Test files mirror modules exactly.
 
 ## Complexity Tracking
 

@@ -124,6 +124,21 @@ Proves: Streaming meets performance targets.
 - No dropped frames during streaming (target 60fps)
 - No full-conversation re-renders per token (check React DevTools Profiler if available)
 
+### V9: Manual Smoke Test — Tool-Call UI
+
+Proves: Tool activity is correctly rendered in a collapsible accordion and separated from main response text.
+
+1. Send a message that triggers a tool call on the backend (e.g., asking for stock price or calculation).
+2. Observe the message bubble as the tool is invoked.
+
+**Expected**:
+- A "Tool activity" accordion appears at the top of the message bubble.
+- The accordion starts closed.
+- The accordion title shows `Using "tool_name"...` during the `tool_call_delta` phase.
+- Once the tool call finishes, the title changes to `Tool finished`.
+- Clicking the accordion opens it to reveal syntax-highlighted, pretty-printed JSON arguments and results.
+- The normal response text streams freely below the accordion without being disrupted by the JSON.
+
 ## Key Files to Inspect
 
 | File | What to verify |
@@ -133,7 +148,9 @@ Proves: Streaming meets performance targets.
 | [event-dispatcher.ts](../../lib/conversation/event-dispatcher.ts) | Type dispatch + field validation per [contract](./contracts/ndjson-event-dispatch.md) |
 | [stream-controller.ts](../../lib/conversation/stream-controller.ts) | Per-request context, CueReader integration, stall timer, metrics |
 | [useConversation.ts](../../lib/conversation/useConversation.ts) | Refactored to delegate to StreamController |
+| [ToolActivity.tsx](../../components/ToolActivity.tsx) | New collapsible accordion component for grouping tool calls |
+| [MessageLog.tsx](../../components/MessageLog.tsx) | Modified to render the ToolActivity component and tool calls array |
 
 ## Definition of Done
 
-All validation scenarios (V1–V8) pass. No new npm dependencies added. No changes to component files outside `lib/conversation/`. All existing tests remain green.
+All validation scenarios (V1–V9) pass. No new npm dependencies added. All existing tests remain green.

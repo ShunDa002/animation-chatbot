@@ -34,4 +34,5 @@
 - FR-021 mentions `requestAnimationFrame` as an example batching strategy. This is acceptable as a clarifying example, not a technology prescription.
 - FR-024 references the existing `CueReader` to ensure backward compatibility. The spec intentionally preserves this integration point.
 - Clarification session 2026-09-29: 5 questions asked and integrated (CueReader pipeline, observability scope, field validation, out-of-scope boundary, message state model). All items remain passing.
+- Clarification session 2026-09-29 (Part 2): 4 questions asked and integrated (Accordion state, Error states, JSON formatting, Tool grouping). All items remain passing (16/16).
 - All checklist items pass (16/16). Spec is ready for `/speckit-plan`.

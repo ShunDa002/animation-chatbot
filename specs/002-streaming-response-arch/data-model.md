@@ -186,7 +186,10 @@ Not exported. Lives as closure state inside the controller factory.
 
 ### Message (lib/conversation/limits.ts)
 
-No structural change. The `status` field type expands (see MessageStatus above). The `text` field continues to hold CueReader-stripped display text.
+The `Message` interface expands to include the `toolCalls` array so the UI can render the ToolActivity accordion, which persists multiple sequential tool calls and remains visible after message completion.
+- `toolCalls?: ToolCallRecord[]` — Array of tool calls associated with this message.
+- `status` — Expanded to include new states (see MessageStatus above).
+- `text` — Continues to hold CueReader-stripped display text.
 
 ### Emotion (lib/emotion.ts)
 

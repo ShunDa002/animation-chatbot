@@ -43,9 +43,8 @@ export default function ChatPanel({ conversation, className = '' }: Props) {
         <MessageLog messages={messages} status={status} />
 
         <p
-          className={`status-line min-h-[1.4em] text-xs sm:text-sm m-0 transition-colors flex items-center drop-shadow-sm ${
-            isFailure ? 'error text-[var(--danger)]' : 'text-slate-200'
-          }`}
+          className={`status-line min-h-[1.4em] text-xs sm:text-sm m-0 transition-colors flex items-center drop-shadow-sm ${isFailure ? 'error text-[var(--danger)]' : 'text-slate-200'
+            }`}
         >
           {status === 'waiting' ? (
             <span className="waiting-indicator inline-flex items-center gap-2">
@@ -77,7 +76,7 @@ export default function ChatPanel({ conversation, className = '' }: Props) {
 
         <Announcer status={status} announcement={announcement} notice={notice} />
       </div>
-      
+
       <p className="attribution absolute bottom-1 left-0 right-0 text-[10px] text-slate-300/80 drop-shadow-sm text-center m-0 truncate pointer-events-none">
         Character model: Live2D Remu (Cubism 2.1). Rendering by pixi-live2d-display over PixiJS.
       </p>

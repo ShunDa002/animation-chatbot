@@ -291,6 +291,42 @@ describe('StreamController - User Story 1 (Core streaming path)', () => {
       expect(rekeyed.parsedArgs).toEqual({ a: 1 });
     });
 
+    it('tracks multiple sequential tool calls without overwriting previous tools', () => {
+      const onToolUpdate = vi.fn();
+      const controller = createStreamController({ onToolUpdate });
+
+      // Tool 1 delta and result
+      controller.processChunk(
+        encoder.encode(
+          '{"type":"tool_call_delta","tool_name":"get_weather","tool_call_id":"c1","tool_call_index":0,"args_delta":"{\\"loc\\":\\"Tokyo\\"}"}\n' +
+            '{"type":"tool_result","tool_call_id":"c1","content":"22C"}\n',
+        ),
+      );
+
+      // Tool 2 delta (even if index is 0 in second model turn) and result
+      controller.processChunk(
+        encoder.encode(
+          '{"type":"tool_call_delta","tool_name":"convert_units","tool_call_id":"c2","tool_call_index":0,"args_delta":"{\\"temp\\":22}"}\n' +
+            '{"type":"tool_result","tool_call_id":"c2","content":"71.6F"}\n',
+        ),
+      );
+
+      const latestTools: any[] = onToolUpdate.mock.calls.at(-1)![0];
+      expect(latestTools).toHaveLength(2);
+
+      // Verify Tool 1 is intact
+      expect(latestTools[0].toolName).toBe('get_weather');
+      expect(latestTools[0].argsAccumulator).toBe('{"loc":"Tokyo"}');
+      expect(latestTools[0].result).toBe('22C');
+      expect(latestTools[0].status).toBe('completed');
+
+      // Verify Tool 2 is intact
+      expect(latestTools[1].toolName).toBe('convert_units');
+      expect(latestTools[1].argsAccumulator).toBe('{"temp":22}');
+      expect(latestTools[1].result).toBe('71.6F');
+      expect(latestTools[1].status).toBe('completed');
+    });
+
     it('warns on unmatched tool_result and creates unmatched record', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const onToolUpdate = vi.fn();

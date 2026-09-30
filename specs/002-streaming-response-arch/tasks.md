@@ -127,9 +127,9 @@
 
 - [X] T020 [US5] Implement tool-call record management in stream controller: add Map<string, ToolCallRecord> to RequestContext. In onToolCallDelta handler: find or create record by tool_call_id or index key, update sticky fields, append args_delta. In onToolResult handler: find record by tool_call_id, attach result, update status to completed/failed, record endTime. If no match, create unmatched record and log warning. In lib/conversation/stream-controller.ts
 - [X] T021 [US5] Expose tool-call records from stream controller to useConversation: add options.onToolUpdate(toolCalls: ToolCallRecord[]) callback invoked after each tool_call_delta and tool_result. In useConversation.ts, store tool-call records in state associated with the current assistant message. Update Message type or create a separate tool-call state structure
-- [X] T022 [US5] Add ToolCallRecord[] field to Message interface or create a parallel tool-call store in lib/conversation/limits.ts. Ensure tool-call data is available to presentation layer
+- [X] T022 [US5] Add ToolCallRecord[] field to Message interface in lib/conversation/limits.ts. Ensure tool-call data is available to presentation layer
 
-**Checkpoint**: Tool calls tracked end-to-end. Data available for UI rendering (presentation components are out of scope for this feature).
+**Checkpoint**: Tool calls tracked end-to-end. Data available for UI rendering (US9).
 
 ---
 
@@ -186,16 +186,31 @@
 
 ---
 
-## Phase 11: Polish & Cross-Cutting Concerns
+## Phase 11: User Story 9 - Tool-Call & Response Rendering (Priority: P2)
+
+**Goal**: Render tool calls in a secondary collapsible accordion and normal response text as primary focal text.
+
+**Independent Test**: Stream a `tool_call_delta` followed by `tool_result`. Verify a "Tool activity" accordion appears at the top, starts closed, displays `Using "tool_name"...`, and formats JSON correctly when opened.
+
+### Implementation for User Story 9
+
+- [X] T031 [US9] Create `ToolActivity` React component in `components/ToolActivity.tsx` that accepts a `toolCalls: ToolCallRecord[]` prop. Render a parent `<details>` accordion that starts closed. The `<summary>` title should be `Using "{toolName}"...` if any tool is generating, `Tool failed` (with red border) if any failed, and `Tool finished` if all succeeded. Inside the accordion, loop through each tool call and render `argsAccumulator` and `result` inside syntax-highlighted (or well-styled) `<pre><code>` blocks, using `JSON.stringify(parsedArgs || rawString, null, 2)` to pretty-print.
+- [X] T032 [US9] Update `components/MessageLog.tsx` to pass the `toolCalls` array from the `Message` object to the new `ToolActivity` component. Render `ToolActivity` at the top of the message bubble (if `toolCalls` has length > 0), and render the normal conversational text below it using the existing Markdown renderer.
+
+**Checkpoint**: Tool activity separated from conversation text, visually structured per requirements.
+
+---
+
+## Phase 12: Polish & Cross-Cutting Concerns
 
 **Purpose**: Metrics, cleanup, and validation.
 
-- [X] T031 Complete and verify StreamMetrics recording in stream controller (scaffolding partially exists from T009): ensure sendTime is recorded at construction, firstTokenTime at first token event, endTime and outcome at terminal state. Verify event counts by type are incremented. Verify computed fields timeToFirstToken and totalDuration. Ensure metrics are passed to all terminal callbacks (onComplete, onError, onInterrupted, onCancelled). In lib/conversation/stream-controller.ts
-- [X] T032 [P] Add metrics tests in tests/unit/stream-controller.test.ts: verify all StreamMetrics fields populated correctly for completed, error, interrupted, cancelled, and stalled outcomes
-- [X] T033 Remove dead code from useConversation.ts: remove the inline TextDecoder, cue.push loop, started flag, and stall timer that are now handled by stream controller. Ensure no duplicate state management remains
-- [X] T034 Run full test suite (`npm test`) and verify zero failures, zero skips
-- [X] T035 Run quickstart.md validation scenarios V1–V3 (automated) and V4–V6 (manual smoke tests)
-- [X] T036 Implement requestAnimationFrame-based render batching for streaming token updates in lib/conversation/useConversation.ts (FR-021, SC-003): accumulate token text updates in a ref during the read loop and flush to React state via a single setState inside a requestAnimationFrame callback. Verify with a test or profiler measurement that 500 rapid token events produce fewer than 60 React re-renders per second on the conversation container
+- [X] T033 Complete and verify StreamMetrics recording in stream controller (scaffolding partially exists from T009): ensure sendTime is recorded at construction, firstTokenTime at first token event, endTime and outcome at terminal state. Verify event counts by type are incremented. Verify computed fields timeToFirstToken and totalDuration. Ensure metrics are passed to all terminal callbacks (onComplete, onError, onInterrupted, onCancelled). In lib/conversation/stream-controller.ts
+- [X] T034 [P] Add metrics tests in tests/unit/stream-controller.test.ts: verify all StreamMetrics fields populated correctly for completed, error, interrupted, cancelled, and stalled outcomes
+- [X] T035 Remove dead code from useConversation.ts: remove the inline TextDecoder, cue.push loop, started flag, and stall timer that are now handled by stream controller. Ensure no duplicate state management remains
+- [X] T036 Run full test suite (`npm test`) and verify zero failures, zero skips
+- [X] T037 Run quickstart.md validation scenarios V1–V3 (automated) and V4–V9 (manual smoke tests)
+- [X] T038 Implement requestAnimationFrame-based render batching for streaming token updates in lib/conversation/useConversation.ts (FR-021, SC-003): accumulate token text updates in a ref during the read loop and flush to React state via a single setState inside a requestAnimationFrame callback. Verify with a test or profiler measurement that 500 rapid token events produce fewer than 60 React re-renders per second on the conversation container
 
 ---
 
@@ -213,7 +228,8 @@
 - **US6 (Phase 8)**: Depends on Phase 2 (dispatcher only — can run after foundational)
 - **US7 (Phase 9)**: Depends on Phase 3 (extends controller with cancel + requestId)
 - **US8 (Phase 10)**: Depends on Phase 3 (extends controller with stall timer)
-- **Polish (Phase 11)**: Depends on all user story phases
+- **US9 (Phase 11)**: Depends on Phase 7 (requires tool-call records in Message state)
+- **Polish (Phase 12)**: Depends on all user story phases
 
 ### User Story Dependencies
 
@@ -225,6 +241,7 @@
 - **US6 (P2)**: Foundational only (dispatcher already handles unknown types)
 - **US7 (P3)**: US1 (extends controller with cancel/requestId)
 - **US8 (P3)**: US1 (extends controller with stall timer)
+- **US9 (P2)**: US5 (needs tool-call records in Message array)
 
 ### Within Each User Story
 
@@ -237,7 +254,8 @@
 - T004 + T005 + T006 + T007 in Phase 2 (4 files, no dependencies between them)
 - US3 (Phase 5) + US4 (Phase 6) + US5 (Phase 7) can run in parallel after US1 (Phase 3) — they extend different parts of the controller
 - US6 (Phase 8) can start after Phase 2 (does not depend on US1)
-- T031 + T032 + T036 in Phase 11 can run in parallel with T033
+- US9 (Phase 11) can run in parallel with US6, US7, US8 after US5 completes
+- T033 + T034 + T038 in Phase 12 can run in parallel with T035
 
 ---
 
@@ -278,7 +296,7 @@ Phase 7 (US5 - Tool calls): extends stream-controller.ts with tool-call map
 2. US1 → Core streaming MVP ✓ → Validate
 3. US2 + US3 → Robust parsing + error handling ✓ → Validate
 4. US4 + US5 → Interruption detection + tool calls ✓ → Validate
-5. US6 + US7 + US8 → Forward compat + concurrency + heartbeat ✓ → Validate
+5. US6 + US7 + US8 + US9 → Forward compat + concurrency + heartbeat + Tool UI ✓ → Validate
 6. Polish → Metrics, cleanup, full validation ✓
 
 ---
@@ -290,5 +308,5 @@ Phase 7 (US5 - Tool calls): extends stream-controller.ts with tool-call map
 - Constitution II requires tests for parser (loops), dispatcher (branching), controller (state machine)
 - No new npm dependencies — uses TextDecoder, JSON.parse, Fetch API, Map
 - CueReader (lib/conversation/cue.ts) is unchanged — only its input source changes (token.content instead of raw bytes)
-- Component files (MessageLog, ChatPanel, etc.) may need minor status-string updates in T002 but no structural changes
-- Tool-call UI components are out of scope (spec Out of Scope) — T021/T022 expose data only
+- Component files (MessageLog, ChatPanel, etc.) may need minor status-string updates in T002
+- `ToolActivity` handles JSON formatting for `US9`

@@ -150,10 +150,13 @@ export function useConversation(): Conversation {
     (replyId: string, text: string, emotion: Emotion) => {
       setMessages((current) => {
         const hasBubble = current.some((message) => message.id === replyId);
-        const completed: Message = { id: replyId, author: 'character', text, status: 'completed' };
         return hasBubble
-          ? current.map((message) => (message.id === replyId ? completed : message))
-          : [...current, completed];
+          ? current.map((message) =>
+              message.id === replyId
+                ? { ...message, text, status: 'completed' }
+                : message,
+            )
+          : [...current, { id: replyId, author: 'character', text, status: 'completed' }];
       });
       // The single value that crosses the seam (FR-020).
       setEmotion(emotion);
@@ -271,7 +274,22 @@ export function useConversation(): Conversation {
               }
               pendingTextRef.current = null;
               if (completedText.trim().length === 0) {
-                setMessages((current) => current.filter((message) => message.id !== replyId));
+                let hadToolCalls = false;
+                setMessages((current) => {
+                  const target = current.find((message) => message.id === replyId);
+                  if (target?.toolCalls && target.toolCalls.length > 0) {
+                    hadToolCalls = true;
+                    return current.map((message) =>
+                      message.id === replyId ? { ...message, text: '', status: 'completed' } : message,
+                    );
+                  }
+                  return current.filter((message) => message.id !== replyId);
+                });
+                if (hadToolCalls) {
+                  setEmotion(emotion);
+                  finish('idle', null);
+                  return;
+                }
                 setEmotion(NEUTRAL);
                 finish('error', copy.failedEmpty);
                 return;
@@ -353,11 +371,14 @@ export function useConversation(): Conversation {
             },
             onToolUpdate: (toolCalls, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
-              setMessages((current) =>
-                current.map((message) =>
-                  message.id === replyId ? { ...message, toolCalls } : message,
-                ),
-              );
+              setMessages((current) => {
+                const hasBubble = current.some((message) => message.id === replyId);
+                return hasBubble
+                  ? current.map((message) =>
+                      message.id === replyId ? { ...message, toolCalls } : message,
+                    )
+                  : [...current, { id: replyId, author: 'character', text: '', status: 'streaming', toolCalls }];
+              });
             },
           });
           streamControllerRef.current = streamController;

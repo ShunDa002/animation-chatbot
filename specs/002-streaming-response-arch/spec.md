@@ -18,6 +18,13 @@
 - Q: Should the spec explicitly declare what is out of scope? → A: Yes, add explicit out-of-scope section listing conversation persistence, multi-conversation switching, content security/sanitization, stream reconnection, and full observability dashboards (Option A).
 - Q: Should the message status transition to waiting_for_tool during tool calls, or stay streaming with tool-local sub-states? → A: Message stays `streaming` throughout. Tool progress tracked per-tool-call record only (preparing → generating_args → completed/failed). No top-level waiting_for_tool state (Option B).
 
+### Session 2026-09-29 (Part 2)
+
+- Q: How should the accordion's open/close state behave during and after the tool execution? → A: Start closed, require manual click to view args/content.
+- Q: How should a failed tool execution be presented if the backend returns a failure status? → A: Title displays "Tool failed" with a warning/error visual accent (e.g., red border).
+- Q: How should the raw JSON strings in `args_delta` and `content` be formatted inside the accordion? → A: Pretty-printed JSON in a syntax-highlighted code block.
+- Q: When the backend invokes multiple tools sequentially for a single message, how should they be arranged? → A: Grouped inside a single parent "Tool activity" accordion.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Incremental Text Streaming via NDJSON (Priority: P1)
@@ -147,6 +154,25 @@ The frontend supports an optional `heartbeat` event type that refreshes an inact
 
 ---
 
+### User Story 9 - Tool-Call & Response Rendering (Priority: P2)
+
+The chatbot UI separates the response into two distinct visual areas: the primary Normal Response Text and a secondary Tool Calling / Result Block. Tool activities are grouped in a single parent accordion that starts closed.
+
+**Why this priority**: Users need to focus on the conversational reply without being overwhelmed by raw JSON arguments and results, yet still have access to the tool context if desired.
+
+**Independent Test**: Stream a `tool_call_delta` followed by `tool_result`. Verify a "Tool activity" accordion appears, starts closed, displays `Using "tool_name"...` during delta and `Tool finished` on result, and renders pretty-printed JSON when opened.
+
+**Acceptance Scenarios**:
+
+1. **Given** a tool call begins, **When** the UI renders, **Then** it creates a parent "Tool activity" accordion (starting closed) and displays `Using "tool_name"...` as the title.
+2. **Given** a tool call finishes successfully, **When** `tool_result` is processed, **Then** the title becomes `Tool finished` and the raw `args_delta` and `content` are formatted as pretty-printed JSON in syntax-highlighted code blocks.
+3. **Given** a tool call fails, **When** the backend returns a failure status, **Then** the title displays "Tool failed" with a warning/error visual accent (e.g., red border).
+4. **Given** multiple tools are called sequentially, **When** they render, **Then** they are grouped within the single parent "Tool activity" accordion. The accordion content MUST display all previous tool names, arguments, and results, appending the new tool call data without overwriting the old. The accordion title updates to reflect the current active tool.
+5. **Given** the normal response text renders and completes, **When** the message status becomes completed, **Then** the "Tool activity" accordion MUST remain visible, ensuring tool calls and results remain accountable and observable.
+6. **Given** the normal response text renders, **When** tokens arrive, **Then** it is rendered as primary focal text using a rich-text markdown renderer (high-contrast, spacious).
+
+---
+
 ### Edge Cases
 
 - What happens when the `start` event never arrives but `token` events do? Frontend should still create a streaming placeholder and log a protocol warning.
@@ -185,6 +211,10 @@ The frontend supports an optional `heartbeat` event type that refreshes an inact
 - **FR-024**: System MUST feed each `token.content` value incrementally into the existing `CueReader`, which strips `[emotion:<name>]` cue markers using its candidate-aware tail buffer. The CueReader's `push()` output drives the visible streaming text, and its `end()` result provides the final display text and derived emotion. The CueReader is not called post-`done` on the full accumulated text — it processes tokens as they arrive to prevent marker flashes during streaming.
 - **FR-025**: System MUST record minimal streaming metrics per request: time from send to first `token` event (time-to-first-token), total response duration (send to `done`/`error`/interruption), count of received events by type, and terminal outcome (completed, error, cancelled, interrupted). These signals are emitted via a callback or event interface; dashboard and reporting infrastructure are out of scope.
 - **FR-026**: System MUST perform runtime validation of required fields for each recognized event type before dispatching. Specifically: `token.content` must be a string; `tool_call_delta.args_delta` must be a string; `error.message` must be a string; `start.thread_id` must be a string. An event that fails validation is skipped with a logged warning. Full schema validation with size limits is out of scope.
+- **FR-027**: System MUST render normal response text as the primary focal destination (spacious, high-contrast rich-text markdown), while rendering tool calls in a secondary, muted, compact accordion drawer.
+- **FR-028**: System MUST group all tool calls for a single message inside a single parent "Tool activity" accordion that starts closed and requires a manual click to view contents. This accordion MUST remain visible even after the response text generation is completed.
+- **FR-029**: System MUST format raw JSON strings (`args_delta` and `content`) inside the tool accordion as pretty-printed JSON in a syntax-highlighted code block. The accordion content MUST display all the tools called sequentially, preserving previous tool names, arguments, and results while appending new ones.
+- **FR-030**: System MUST indicate tool status in the UI: title displays the active or most recent tool name (e.g., `Using "tool_name"...` during generation, `Tool finished` on success, or `Tool failed` on failure).
 
 ### Key Entities
 
@@ -227,4 +257,4 @@ The following areas are explicitly excluded from this feature. They are covered 
 - The backend does not currently emit a `tool_started` event; the frontend infers the "executing tool" state from the gap between the last `tool_call_delta` and the `tool_result`.
 - Target browsers support the Fetch API with readable response bodies and `AbortController`.
 - The emotional cue marker `[emotion:<name>]` remains appended to the end of assistant replies by the model, and is still processed by the existing `CueReader`.
-- Tool-call UI rendering (collapsible panels, argument display) is a presentation concern handled by new components; the conversation data model provides the structured data.
+- Tool-call UI rendering (collapsible panels, argument display, grouping, syntax highlighting) is handled by the presentation components within the scope of this feature to meet UX requirements.

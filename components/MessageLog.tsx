@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { Message } from '@/lib/conversation/limits';
 import type { ConversationStatus } from '@/lib/conversation/useConversation';
+import ToolActivity from './ToolActivity';
 
 interface Props {
   messages: readonly Message[];
@@ -86,7 +87,14 @@ export default function MessageLog({ messages, status }: Props) {
               <span className="message-author block text-[0.7rem] uppercase tracking-wider text-slate-300 mb-0.5 [text-shadow:none]">
                 Aria
               </span>
-              {message.text}
+              {message.toolCalls && message.toolCalls.length > 0 && (
+                <ToolActivity toolCalls={message.toolCalls} />
+              )}
+              {message.text ? (
+                <div className="message-text">
+                  {message.text}
+                </div>
+              ) : null}
             </div>
           </div>
         );

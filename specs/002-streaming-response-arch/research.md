@@ -85,3 +85,13 @@
 **Alternatives considered**:
 - **Full rewrite**: Replace `useConversation` entirely. High risk of regression and unnecessary since the hook's external interface is correct.
 - **Keep inline, just add NDJSON**: Minimally invasive but the hook would grow to 400+ lines with tool-call handling, violating constitution I (single responsibility).
+
+## R9: Tool-Call Rendering UI
+
+**Decision**: Implement a new `ToolActivity` React component that receives the list of tool calls for a message and renders them inside a single collapsible accordion. The accordion title indicates the overall status (`Using "tool_name"...` or `Tool finished` / `Tool failed`). The JSON strings are parsed and pretty-printed using `JSON.stringify(..., null, 2)` inside syntax-highlighted code blocks.
+
+**Rationale**: The user requirements (Clarification Session 2) mandate separating the tool activity from the primary response text and styling it as a secondary, muted component. Grouping multiple tool calls inside a single parent accordion prevents UI clutter. Parsing and pretty-printing the JSON provides readability.
+
+**Alternatives considered**:
+- **Render directly in `MessageLog.tsx`**: Too much presentation logic added to an already complex file. Extracting `ToolActivity` is better for single responsibility.
+- **Third-party JSON viewer**: We can use a simple `<pre><code>` block with `JSON.stringify` instead of adding a dependency, adhering to Constitution I.
