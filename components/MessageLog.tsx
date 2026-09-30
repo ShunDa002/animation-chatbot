@@ -40,7 +40,7 @@ export default function MessageLog({ messages, status }: Props) {
 
   return (
     <div
-      className="message-log flex-1 overflow-y-auto flex flex-col gap-3 min-h-[160px] pr-1"
+      className="message-log flex-1 overflow-y-auto flex flex-col gap-3 min-h-0 pr-1"
       ref={containerRef}
       role="log"
       aria-label="Messages"

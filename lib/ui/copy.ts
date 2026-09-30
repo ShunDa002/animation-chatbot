@@ -29,6 +29,10 @@ export const copy = {
   inputLabel: 'Message Aria',
   inputPlaceholder: 'Say something…',
   sendLabel: 'Send',
+  attachmentLabel: 'Add attachment',
+  modelSelectLabel: 'Select model',
+  voiceInputLabel: 'Voice input',
+  stopLabel: 'Stop generating',
   /** Remaining-character affordance. The cap is visible before sending, not enforced at send. */
   charactersRemaining: (remaining: number) =>
     remaining === 1 ? '1 character left' : `${remaining} characters left`,

@@ -64,7 +64,8 @@ test.describe('keyboard only (FR-003, SC-014)', () => {
   });
 
   test('focus is visible when a control is focused by keyboard', async ({ page }) => {
-    await page.getByRole('textbox').focus();
+    await page.getByRole('textbox').fill('something');
+    await page.getByRole('button', { name: 'Send' }).focus();
     const outline = await page.evaluate(() => {
       const active = document.activeElement;
       if (!active) return null;

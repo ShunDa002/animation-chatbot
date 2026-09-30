@@ -138,10 +138,10 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     return;
   }
 
-  // Plain-text streaming response (FR-046, contracts/chat-api.md)
+  // NDJSON streaming response (FR-046, specs/002-streaming-response-arch)
   setCorsHeaders(res);
   res.writeHead(200, {
-    'content-type': 'text/plain; charset=utf-8',
+    'content-type': 'application/x-ndjson; charset=utf-8',
     'transfer-encoding': 'chunked',
     'cache-control': 'no-store',
     connection: 'close',
@@ -151,9 +151,11 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     await sleep(script.delayFirstMs);
   }
 
+  res.write(JSON.stringify({ type: 'start', thread_id: threadId }) + '\n');
+
   for (const chunk of script.chunks) {
     if (res.writableEnded) return;
-    res.write(chunk);
+    res.write(JSON.stringify({ type: 'token', content: chunk }) + '\n');
     await sleep(script.gapMs ?? 5);
   }
 
@@ -167,6 +169,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     return; // hold connection open
   }
 
+  res.write(JSON.stringify({ type: 'done' }) + '\n');
   res.end();
 }
 

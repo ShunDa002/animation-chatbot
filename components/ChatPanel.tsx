@@ -36,14 +36,14 @@ export default function ChatPanel({ conversation, className = '' }: Props) {
 
   return (
     <section
-      className={`chat-panel absolute bottom-0 inset-x-0 h-1/2 z-20 flex flex-col px-3 pt-3 pb-0 sm:px-4 sm:pt-4 sm:pb-0 md:px-5 md:pt-5 md:pb-0 bg-transparent bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.6)] to-[rgba(28,30,39,0.8)] overflow-hidden text-white ${className}`}
+      className={`chat-panel absolute bottom-0 inset-x-0 h-1/2 z-20 flex flex-col px-3 pt-3 pb-6 sm:px-4 sm:pt-4 sm:pb-7 md:px-5 md:pt-5 md:pb-7 bg-transparent bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.6)] to-[rgba(28,30,39,0.8)] overflow-hidden text-white ${className}`}
       aria-label="Conversation"
     >
-      <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col min-h-0 gap-2 sm:gap-3 text-white pb-0">
+      <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col justify-end min-h-0 gap-2 sm:gap-3 text-white pb-0">
         <MessageLog messages={messages} status={status} />
 
         <p
-          className={`status-line min-h-[1.4em] text-xs sm:text-sm m-0 transition-colors flex items-center drop-shadow-sm ${isFailure ? 'error text-[var(--danger)]' : 'text-slate-200'
+          className={`status-line min-h-[1.4em] text-xs sm:text-sm m-0 transition-colors flex items-center shrink-0 drop-shadow-sm ${isFailure ? 'error text-[var(--danger)]' : 'text-slate-200'
             }`}
         >
           {status === 'waiting' ? (

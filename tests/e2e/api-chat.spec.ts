@@ -243,7 +243,7 @@ test.describe('200: the success shape (FR-027, FR-046)', () => {
     const response = await request.post(`${BACKEND}/chat`, { data: validBody('hello') });
 
     expect(response.status()).toBe(200);
-    expect(response.headers()['content-type']).toContain('text/plain');
+    expect(response.headers()['content-type']).toContain('application/x-ndjson');
     expect(response.headers()['cache-control']).toContain('no-store');
 
     const body = await response.text();
