@@ -49,7 +49,7 @@ export interface Conversation {
 let sequence = 0;
 function nextId(prefix: string): string {
   sequence += 1;
-  return `${prefix}-${sequence}`;
+  return `${prefix}-${Date.now()}-${sequence}`;
 }
 
 /** Which visitor-facing sentence a failed response maps to. The body is never displayed (FR-030). */
@@ -60,11 +60,59 @@ function noticeForStatus(status: number): { notice: string; status: Conversation
   return { notice: copy.failedGeneric, status: 'error' };
 }
 
+export const STORAGE_KEY_THREAD = 'chat_thread_id';
+export const STORAGE_KEY_MESSAGES = 'chat_messages';
+
+function getInitialSession(): {
+  messages: Message[];
+  threadId: string | null;
+  status: ConversationStatus;
+  isRestored: boolean;
+} {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const storedThread = sessionStorage.getItem(STORAGE_KEY_THREAD);
+      const storedMessages = sessionStorage.getItem(STORAGE_KEY_MESSAGES);
+
+      if (storedThread) {
+        let messages: Message[] = [];
+        if (storedMessages) {
+          try {
+            const parsed = JSON.parse(storedMessages);
+            if (Array.isArray(parsed)) {
+              const seenIds = new Set<string>();
+              messages = parsed.map((m: Message) => {
+                let id = m.id;
+                if (!id || seenIds.has(id)) {
+                  id = nextId(m.author || 'msg');
+                }
+                seenIds.add(id);
+                if (m.status === 'streaming') {
+                  return { ...m, id, status: 'interrupted' as const };
+                }
+                return { ...m, id };
+              });
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+        return { messages, threadId: storedThread, status: 'idle', isRestored: true };
+      }
+    }
+  } catch {
+    // Ignore sessionStorage access errors
+  }
+  return { messages: [], threadId: null, status: 'connecting', isRestored: false };
+}
+
 export function useConversation(): Conversation {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [status, setStatus] = useState<ConversationStatus>('connecting');
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const threadIdRef = useRef<string | null>(null);
+  const [initialSession] = useState(getInitialSession);
+  const [messages, setMessages] = useState<Message[]>(initialSession.messages);
+  const [status, setStatus] = useState<ConversationStatus>(initialSession.status);
+  const [threadId, setThreadId] = useState<string | null>(initialSession.threadId);
+  const threadIdRef = useRef<string | null>(initialSession.threadId);
+  const isRestoredRef = useRef(initialSession.isRestored);
   const [emotion, setEmotion] = useState<Emotion>(NEUTRAL);
   const [notice, setNotice] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
@@ -89,12 +137,18 @@ export function useConversation(): Conversation {
     messagesRef.current = messages;
   }, [messages]);
 
-  // Request a thread from the backend on mount (FR-043).
+  // Request or restore a thread on mount (FR-043, FR-024).
+  // Checks sessionStorage first so conversations persist across page reloads.
   // If thread creation fails, set status to 'error', show backendUnavailable notice,
   // and leave threadId as null (FR-045).
   useEffect(() => {
     let cancelled = false;
 
+    if (threadIdRef.current) {
+      return;
+    }
+
+    // If threadId is absent, call createThread() and store the new UUID
     void (async () => {
       try {
         const id = await createThread();
@@ -102,6 +156,14 @@ export function useConversation(): Conversation {
           threadIdRef.current = id;
           setThreadId(id);
           setStatus('idle');
+          isRestoredRef.current = true;
+          try {
+            if (typeof window !== 'undefined' && window.sessionStorage) {
+              sessionStorage.setItem(STORAGE_KEY_THREAD, id);
+            }
+          } catch {
+            // Ignore sessionStorage access errors
+          }
         }
       } catch {
         if (!cancelled) {
@@ -109,6 +171,7 @@ export function useConversation(): Conversation {
           setThreadId(null);
           setStatus('error');
           setNotice(copy.backendUnavailable);
+          isRestoredRef.current = true;
         }
       }
     })();
@@ -117,6 +180,29 @@ export function useConversation(): Conversation {
       cancelled = true;
     };
   }, []);
+
+  // 3. Whenever messages or threadId change, sync them to sessionStorage (FR-024)
+  useEffect(() => {
+    if (!isRestoredRef.current || !threadId) return;
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        sessionStorage.setItem(STORAGE_KEY_THREAD, threadId);
+      }
+    } catch {
+      // Ignore sessionStorage quota or access errors
+    }
+  }, [threadId]);
+
+  useEffect(() => {
+    if (!isRestoredRef.current || !threadId) return;
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        sessionStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(messages));
+      }
+    } catch {
+      // Ignore sessionStorage quota or access errors
+    }
+  }, [messages, threadId]);
 
   // A visitor who navigates away or reloads mid-reply abandons the request cleanly, so no further
   // work is charged to the demo's allowance (spec Edge Cases).
@@ -152,10 +238,10 @@ export function useConversation(): Conversation {
         const hasBubble = current.some((message) => message.id === replyId);
         return hasBubble
           ? current.map((message) =>
-              message.id === replyId
-                ? { ...message, text, status: 'completed' }
-                : message,
-            )
+            message.id === replyId
+              ? { ...message, text, status: 'completed' }
+              : message,
+          )
           : [...current, { id: replyId, author: 'character', text, status: 'completed' }];
       });
       // The single value that crosses the seam (FR-020).
@@ -228,8 +314,8 @@ export function useConversation(): Conversation {
                   const hasBubble = current.some((message) => message.id === replyId);
                   return hasBubble
                     ? current.map((message) =>
-                        message.id === replyId ? { ...message, status: 'streaming' } : message,
-                      )
+                      message.id === replyId ? { ...message, status: 'streaming' } : message,
+                    )
                     : [...current, { id: replyId, author: 'character', text: '', status: 'streaming' }];
                 });
               }
@@ -248,8 +334,8 @@ export function useConversation(): Conversation {
                         const hasBubble = current.some((message) => message.id === replyId);
                         return hasBubble
                           ? current.map((message) =>
-                              message.id === replyId ? { ...message, text: latest } : message,
-                            )
+                            message.id === replyId ? { ...message, text: latest } : message,
+                          )
                           : [...current, { id: replyId, author: 'character', text: latest, status: 'streaming' }];
                       });
                     }
@@ -260,8 +346,8 @@ export function useConversation(): Conversation {
                   const hasBubble = current.some((message) => message.id === replyId);
                   return hasBubble
                     ? current.map((message) =>
-                        message.id === replyId ? { ...message, text: visible } : message,
-                      )
+                      message.id === replyId ? { ...message, text: visible } : message,
+                    )
                     : [...current, { id: replyId, author: 'character', text: visible, status: 'streaming' }];
                 });
               }
@@ -375,15 +461,15 @@ export function useConversation(): Conversation {
                 const hasBubble = current.some((message) => message.id === replyId);
                 return hasBubble
                   ? current.map((message) =>
-                      message.id === replyId ? { ...message, toolCalls } : message,
-                    )
+                    message.id === replyId ? { ...message, toolCalls } : message,
+                  )
                   : [...current, { id: replyId, author: 'character', text: '', status: 'streaming', toolCalls }];
               });
             },
           });
           streamControllerRef.current = streamController;
 
-          for (;;) {
+          for (; ;) {
             const { done, value } = await reader.read();
             if (done) break;
             if (value) {

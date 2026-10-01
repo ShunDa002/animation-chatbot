@@ -2,9 +2,9 @@
 
 **Date**: 2026-08-31 | **Plan**: [plan.md](./plan.md) | **Spec**: [spec.md](./spec.md)
 
-Nothing here is persisted. Every entity lives in browser memory for the length of one visit
-(FR-024). The thread UUID is stored in React state, created by the external FastAPI backend on page
-load (FR-043, D15). All server-side storage is the backend's responsibility.
+Nothing here is persisted long-term. Entities live in temporary memory (like `sessionStorage` for `threadId`) for the length of one browser session, surviving page reloads but lost when the browser is closed
+(FR-024). The thread UUID is initially created by the external FastAPI backend
+(FR-043, D15) and reused upon reload. All server-side storage is the backend's responsibility.
 
 ---
 
@@ -75,7 +75,7 @@ history with each message. The backend manages context via the thread ID.
   visible to the visitor.
 - A failed, empty, or abandoned reply returns `status` to a sendable state without a reload
   (FR-023).
-- The whole entity is discarded on unload; nothing is written to any persistent store (FR-024).
+- The whole entity persists across reloads via temporary memory (e.g. `sessionStorage`), but is discarded when the browser session closes; nothing is written to any long-term persistent store (FR-024).
 
 ---
 
@@ -92,7 +92,7 @@ A UUID identifying the conversation thread on the external backend (FR-043, D15)
 - Fetched once on mount via `POST /threads`. Stored in component state for the visit only.
 - If the fetch fails, `ConversationStatus` is `'connecting'` and sending is disabled (FR-045).
 - Included as `thread_id` in every `POST /chat` request.
-- Discarded on unload/reload — a new page load creates a new thread (FR-024).
+- Persists on page reload via temporary memory (e.g., `sessionStorage`), but a new thread is created if the session is cleared or the browser is closed (FR-024).
 
 ---
 

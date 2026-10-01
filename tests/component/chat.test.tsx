@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import MessageInput from '@/components/MessageInput';
@@ -9,6 +9,14 @@ import { copy } from '@/lib/ui/copy';
 import type { Message } from '@/lib/conversation/limits';
 import type { Conversation } from '@/lib/conversation/useConversation';
 import { NEUTRAL } from '@/lib/emotion';
+
+beforeEach(() => {
+  sessionStorage.clear();
+});
+
+afterEach(() => {
+  sessionStorage.clear();
+});
 
 // T043 & T116. Behaviour, not internals: what the visitor sees and what a screen reader is told.
 

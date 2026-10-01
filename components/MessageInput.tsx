@@ -11,38 +11,109 @@ import {
 import { copy } from '@/lib/ui/copy';
 import type { ConversationStatus } from '@/lib/conversation/useConversation';
 
-interface Props {
-  onSend(draft: string): void;
-  /** True while a turn is in flight or connecting. Sending is refused, with the reason visible (FR-021, FR-045). */
-  disabled: boolean;
+export interface MessageInputProps {
+  /** Callback invoked when the user submits a message via Enter key or Send button. */
+  onSubmit?: (text: string) => void;
+  /** Legacy alias for onSubmit. */
+  onSend?: (draft: string) => void;
+  /** If true, disables the text area and all actions. */
+  disabled?: boolean;
   /** Why sending is refused, when it is. */
   disabledReason?: string | null;
+  /** If true, places the input in a waiting state where the send button is disabled but text input remains enabled. */
+  isWaitingForResponse?: boolean;
+  /** Current conversation status. */
+  status?: ConversationStatus;
+  /** Optional callback when stop button is clicked during waiting. */
+  onStop?: () => void;
 }
 
+export type Props = MessageInputProps;
+
 const MODEL_OPTIONS = [
-  'gpt-oss-20b',
-  'nemotron-3.5',
-  'qwen3.8-27b',
+  'openai/gpt-oss-20b',
+  'nvidia/nemotron-3.5-lightning:free',
+  'qwen/qwen3.8-27b:free',
 ] as const;
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
+export const STORAGE_KEY_DRAFT = 'chat_input_draft';
 
 /**
  * The composer (FR-022, FR-003, D13).
  *
  * The draft lives in this component's own state, which is what makes it survive a re-render of the
- * log above it (constitution III).
+ * log above it (constitution III). It is also cached in sessionStorage so unsubmitted drafts
+ * survive page reloads (FR-024).
  */
-export default function MessageInput({ onSend, disabled, disabledReason }: Props) {
-  const [draft, setDraft] = useState('');
+export default function MessageInput({
+  onSubmit,
+  onSend,
+  disabled = false,
+  disabledReason,
+  isWaitingForResponse = false,
+  status,
+  onStop,
+}: Props) {
+  const [draft, setDraft] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        const cached = sessionStorage.getItem(STORAGE_KEY_DRAFT);
+        if (cached) {
+          return clampInput(cached);
+        }
+      }
+    } catch {
+      // Ignore sessionStorage access errors
+    }
+    return '';
+  });
   const [selectedModel, setSelectedModel] = useState<string>(MODEL_OPTIONS[0]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isMountedRef = useRef(false);
   const remaining = remainingCharacters(draft);
   const atLimit = atCharacterLimit(draft);
   const counterId = useId();
   const inputId = useId();
 
-  const effectiveReason = disabledReason;
+  // Sync draft to sessionStorage on update
+  useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      return;
+    }
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        if (draft) {
+          sessionStorage.setItem(STORAGE_KEY_DRAFT, draft);
+        } else {
+          sessionStorage.removeItem(STORAGE_KEY_DRAFT);
+        }
+      }
+    } catch {
+      // Ignore sessionStorage quota or access errors
+    }
+  }, [draft]);
+
+  const handleDraftChange = (value: string) => {
+    const clamped = clampInput(value);
+    setDraft(clamped);
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        if (clamped) {
+          sessionStorage.setItem(STORAGE_KEY_DRAFT, clamped);
+        } else {
+          sessionStorage.removeItem(STORAGE_KEY_DRAFT);
+        }
+      }
+    } catch {
+      // Ignore sessionStorage access errors
+    }
+  };
+
+  const isConnecting = status === 'connecting';
+  const effectiveReason = disabledReason ?? (isConnecting ? copy.connecting : null);
 
   const isMultiline = draft.includes('\n') || draft.length > 36;
 
@@ -65,9 +136,17 @@ export default function MessageInput({ onSend, disabled, disabledReason }: Props
   }, [draft, isMultiline]);
 
   function submit(): void {
-    if (disabled || !isSendable(draft)) return;
-    onSend(draft);
+    const handleSend = onSubmit ?? onSend;
+    if (disabled || isWaitingForResponse || isConnecting || !isSendable(draft) || !handleSend) return;
+    handleSend(draft);
     setDraft('');
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        sessionStorage.removeItem(STORAGE_KEY_DRAFT);
+      }
+    } catch {
+      // Ignore sessionStorage access errors
+    }
   }
 
   return (
@@ -97,7 +176,7 @@ export default function MessageInput({ onSend, disabled, disabledReason }: Props
             aria-describedby={counterId}
             // The cap stops input rather than truncating at send (FR-022).
             maxLength={MAX_INPUT_CHARACTERS}
-            onChange={(event) => setDraft(clampInput(event.target.value))}
+            onChange={(event) => handleDraftChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -165,18 +244,32 @@ export default function MessageInput({ onSend, disabled, disabledReason }: Props
               </svg>
             </button>
 
-            {/* Send button */}
-            <button
-              type="submit"
-              aria-label={copy.sendLabel}
-              disabled={disabled || !isSendable(draft)}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center shrink-0 shadow-sm"
-            >
-              <span className="sr-only">{copy.sendLabel}</span>
-              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-              </svg>
-            </button>
+            {/* Stop button (if onStop and waiting) or Send button */}
+            {onStop && (status === 'waiting' || isWaitingForResponse) ? (
+              <button
+                type="button"
+                aria-label={copy.stopLabel}
+                onClick={onStop}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold cursor-pointer transition-all flex items-center justify-center shrink-0 shadow-sm"
+              >
+                <span className="sr-only">{copy.stopLabel}</span>
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="5" y="5" width="14" height="14" rx="2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                aria-label={copy.sendLabel}
+                disabled={disabled || isWaitingForResponse || isConnecting || !isSendable(draft)}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center shrink-0 shadow-sm"
+              >
+                <span className="sr-only">{copy.sendLabel}</span>
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -185,7 +278,7 @@ export default function MessageInput({ onSend, disabled, disabledReason }: Props
         <span id={counterId} className={atLimit ? 'at-limit text-[var(--danger)] font-medium' : undefined}>
           {atLimit ? copy.atCharacterLimit : copy.charactersRemaining(remaining)}
         </span>
-        {disabled && effectiveReason ? <span>{effectiveReason}</span> : null}
+        {(disabled || isConnecting) && effectiveReason ? <span>{effectiveReason}</span> : null}
       </div>
     </form>
   );

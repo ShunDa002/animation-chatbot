@@ -340,7 +340,7 @@ to the FastAPI backend move all server-side logic to where it belongs.
   These modules move to the FastAPI project and are no longer this project's concern.
 - **Removed**: `@upstash/redis` dependency and related env vars (`GROQ_API_KEY`, `GROQ_BASE_URL`,
   `GROQ_MODEL`, `DAILY_REQUEST_LIMIT`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`).
-- **Changed**: `useConversation.ts` — adds `threadId` state, fetches thread on mount, sends
+- **Changed**: `useConversation.ts` — adds `threadId` state backed by `sessionStorage`, fetches thread on mount if not cached, sends
   `user_input` + `thread_id` to the external `/chat` endpoint, removes `outboundHistory` usage.
 - **Changed**: `limits.ts` — `outboundHistory()` and related exports become dead code and are
   removed. `HISTORY_WINDOW` is no longer enforced client-side. `MAX_INPUT_CHARACTERS`, `isSendable`,
@@ -409,7 +409,7 @@ headers. This project assumes CORS is configured correctly and does not proxy to
 | Tailwind v4 breaking changes or plugin incompatibility | Build failure | Pin tailwindcss version; postcss.config.mjs is minimal |
 | FastAPI backend not running on localhost | Thread creation fails, chat disabled on load | FR-045: disable send and show connection notice; `NEXT_PUBLIC_BACKEND_URL` is configurable |
 | CORS misconfigured on the FastAPI backend | Browser blocks all requests | Backend responsibility; documented in quickstart and contract |
-| Thread UUID lost on page reload | New thread, no context carryover | By design: FR-024 says nothing persists across visits |
+| Thread UUID lost when browser closes | New thread, no context carryover | By design: FR-024 says nothing persists across browser sessions (though it persists on reload via `sessionStorage`) |
 
 ---
 

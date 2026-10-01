@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import CharacterArea from '@/components/CharacterArea';
 import ChatPanel from '@/components/ChatPanel';
+import LoadingOverlay from '@/components/LoadingOverlay';
 import Sidebar from '@/components/Sidebar';
 import { useConversation } from '@/lib/conversation/useConversation';
 
@@ -27,8 +28,22 @@ export default function Page() {
     setIsSidebarOpen(false);
   };
 
+  const handleRetryConnection = () => {
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  };
+
+  const isInitialError = !conversation.threadId && conversation.status === 'error';
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg)] relative">
+      <LoadingOverlay
+        isConnecting={conversation.status === 'connecting'}
+        isGeneratingThread={!conversation.threadId && conversation.status !== 'error'}
+        error={isInitialError ? (conversation.notice ?? 'Connection failed.') : null}
+        onRetry={handleRetryConnection}
+      />
       {/* Sidebar (left panel on desktop/tablet, off-canvas drawer on mobile) */}
       <Sidebar
         isOpen={isSidebarOpen}

@@ -20,6 +20,10 @@ nothing else — that is the entire vocabulary between them, so either side is r
 
 ## Clarifications
 
+### Session 2026-09-30
+
+- Q: How should `threadId` persistence be handled across page reloads during a single session? → A: Store `threadId` in temporary memory (sessionStorage) so it persists on page reload but is lost when the browser is closed.
+
 ### Session 2026-09-27
 
 - Q: Should the character's gaze follow the cursor everywhere on the entire browser window, or only when the cursor is over the character display area? → A: Entire browser window (document-level tracking).
@@ -370,8 +374,7 @@ a distinct, visibly different state during the wait and leaves it when text begi
   input beyond it prevented rather than silently truncated at send time.
 - **FR-023**: A failed, empty, or abandoned reply MUST leave the conversation in a state where the
   visitor can send another message without reloading the page.
-- **FR-024**: Active conversation history MUST exist only for the duration of the visit and MUST NOT be
-  written to any persistent store on the device or the server. The historical conversations list in the sidebar MUST be populated with static dummy data for demonstration purposes.
+- **FR-024**: Active conversation history MUST persist across page reloads within the same browser session using temporary memory (e.g., `sessionStorage` for `threadId`), but MUST be lost when the browser is closed. It MUST NOT be written to any long-term persistent store on the device or the server. The historical conversations list in the sidebar MUST be populated with static dummy data for demonstration purposes.
 
 **External backend contract** _(backend implemented in a separate FastAPI project)_
 

@@ -1057,3 +1057,24 @@ Each step adds value without breaking previous steps.
 - [X] T153 [US1] Full validation pass: run all tests (`npm test`, `npm run test:e2e`) to confirm no regressions and that pointer tracking works correctly.
 
 **Checkpoint**: The character tracks the mouse pointer dynamically, pausing during reactions and respecting reduced-motion preferences.
+
+---
+
+## Phase 18: Session Storage for Thread Persistence (FR-024)
+
+**Purpose**: Persist the `threadId` and conversation history in temporary browser memory (`sessionStorage`) so they survive page reloads but are discarded when the browser session closes.
+
+**Depends on**: Phase 2 (T052/T101).
+
+### Tests for Phase 18
+
+- [X] T154 [P] Update E2E test `tests/e2e/conversation.spec.ts` for FR-024: modify the reload test to assert that `threadId` and the message log persist across a page reload, rather than being emptied.
+
+### Implementation for Phase 18
+
+- [X] T155 Update `lib/conversation/useConversation.ts` to sync state with `sessionStorage`:
+  1. On mount, initialize `threadId` and `messages` from `sessionStorage` if present.
+  2. If `threadId` is absent, call `createThread()` and store the new UUID.
+  3. Whenever `messages` or `threadId` change, sync them to `sessionStorage`.
+
+**Checkpoint**: The chat thread and conversation log are restored smoothly on browser reload without losing the backend context.

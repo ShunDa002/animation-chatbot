@@ -36,8 +36,7 @@ Vendored: Cubism 4 Core (`live2dcubismcore.min.js`), Cubism 2 Core (`live2d.js`)
 layout, spacing, colour, and typography. `globals.css` retains only the Tailwind import, CSS custom
 properties for animation tokens, and the `prefers-reduced-motion` media query.
 
-**Storage**: No database. Conversation history lives in browser memory for the visit only (FR-024).
-The thread UUID is stored in React state for the visit only. All server-side storage (daily counter,
+**Storage**: No database. Conversation history and the thread UUID live in temporary browser memory (`sessionStorage`) for the length of one browser session, surviving page reloads but lost when the browser is closed (FR-024). All server-side storage (daily counter,
 conversation context) is the external backend's responsibility (D15).
 
 **Testing**: Vitest + React Testing Library (unit, component); Playwright headless Chromium

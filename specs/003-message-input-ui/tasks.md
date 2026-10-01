@@ -2,9 +2,9 @@
 
 **Input**: Design documents from `specs/003-message-input-ui/`
 
-**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, quickstart.md
+**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Test tasks are included per the project Constitution (Integration-level coverage required).
+**Tests**: The constitution mandates testing. Test tasks are included and must run before implementation.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -14,17 +14,12 @@
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
 
-## Path Conventions
-
-- **Web app**: `components/`, `tests/` at repository root
-
----
-
 ## Phase 1: Setup (Shared Infrastructure)
 
 **Purpose**: Project initialization and basic structure
 
-- [X] T001 Verify project test infrastructure can run component tests for `components/MessageInput.tsx`
+- [X] T001 [P] Ensure Tailwind CSS configuration covers required colors (e.g. #232736) in `app/globals.css` or equivalent config.
+- [X] T002 [P] Set up basic test files in `tests/components/MessageInput.test.tsx` and `tests/components/LoadingOverlay.test.tsx`.
 
 ---
 
@@ -34,77 +29,101 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [X] T002 Add dummy icons (Attachment, Model Selector, Voice) to `components/MessageInput.tsx` per UI requirements without changing core layout yet.
+- [X] T003 Create interface contracts (Props) for `MessageInput` and `LoadingOverlay` in their respective files.
 
-**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
+**Checkpoint**: Foundation ready - user story implementation can now begin.
 
 ---
 
-## Phase 3: User Story 1 - Single-line Input Entry (Priority: P1) 🎯 MVP
+## Phase 3: User Story 4 - Loading State and Initialization (Priority: P1) 🎯 MVP
 
-**Goal**: Implement the default, compact pill-shaped inline layout for single-line entry.
+**Goal**: Display a white loading page with a loader, handle a 30-second timeout, and fade into the chatbot UI.
 
-**Independent Test**: The component renders as a pill-shaped dark-theme container. Typing a single line of text preserves the inline horizontal distribution of all controls.
+**Independent Test**: Simulating a network delay shows the loader. Passing 30 seconds shows the retry button. Successful connection fades into the UI.
 
-### Tests for User Story 1 ⚠️
+### Tests for User Story 4 ⚠️
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [X] T003 [P] [US1] Integration test for single-line rendering and dummy controls presence in `tests/components/MessageInput.test.tsx`
+- [X] T004 [P] [US4] Integration test for loading overlay rendering and timeout in `tests/components/LoadingOverlay.test.tsx`
+
+### Implementation for User Story 4
+
+- [X] T005 [US4] Create `LoadingOverlay` component layout with centered loader in `components/LoadingOverlay.tsx`
+- [X] T006 [US4] Implement CSS transitions for fade-in/fade-out in `components/LoadingOverlay.tsx`
+- [X] T007 [US4] Implement 30-second timeout and retry button logic in `components/LoadingOverlay.tsx`
+
+**Checkpoint**: At this point, the LoadingOverlay should be fully functional and testable independently.
+
+---
+
+## Phase 4: User Story 1 - Single-line Input Entry (Priority: P1)
+
+**Goal**: Render the default pill-shaped input with inline controls (Attachment, Text, Model Selector, Voice, Send).
+
+**Independent Test**: Renders as a dark-theme pill. Text fits on a single line, and controls remain horizontally inline.
+
+### Tests for User Story 1 ⚠️
+
+- [X] T008 [P] [US1] Integration test for single-line rendering and control distribution in `tests/components/MessageInput.test.tsx`
 
 ### Implementation for User Story 1
 
-- [X] T004 [US1] Update `components/MessageInput.tsx` to render a dark-theme, pill-shaped inline layout when text is on a single line.
-- [X] T013 [US1] Style the Send Action as a high-contrast, solid circular button in cobalt blue with an upward arrow in `components/MessageInput.tsx`.
+- [X] T009 [US1] Refactor `MessageInput` to a pill-shape layout with inline controls and remove textarea border focus in `components/MessageInput.tsx`
+- [X] T010 [US1] Implement dummy model selector dropdown (headless or styled select) meeting #232736 hover requirement in `components/MessageInput.tsx`
+- [X] T011 [US1] Implement dummy attachment, voice, and send buttons (cobalt blue, upward arrow icon) in `components/MessageInput.tsx`
 
-**Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
+**Checkpoint**: Single-line layout works independently.
 
 ---
 
-## Phase 4: User Story 2 - Multi-line Morph and Dual-Zone Layout (Priority: P1)
+## Phase 5: User Story 2 - Multi-line Morph and Dual-Zone Layout (Priority: P1)
 
-**Goal**: Auto-expanding input that morphs into a two-tier layout (actions at bottom) when text exceeds 36 characters or wraps to a second line, stopping at 5 lines.
+**Goal**: Smoothly morph the pill into a two-tier card when text exceeds 36 chars or wraps, maintaining controls at the bottom.
 
-**Independent Test**: Typing enough text to exceed 36 characters or wrap to a second line triggers the morph into a rounded rectangle, and controls rearrange into a bottom footer. Text area stops growing at exactly 5 lines.
+**Independent Test**: Typing a long sentence morphs the layout into a card, moving controls to the bottom-left and bottom-right.
 
 ### Tests for User Story 2 ⚠️
 
-- [X] T005 [P] [US2] Integration test for layout shift when entering multiple lines or exceeding 36 characters and max height limit in `tests/components/MessageInput.test.tsx`
+- [X] T012 [P] [US2] Integration test for multi-line transition and max-height capping in `tests/components/MessageInput.test.tsx`
 
 ### Implementation for User Story 2
 
-- [X] T006 [US2] Modify `components/MessageInput.tsx` to use a React `ref` and dynamically apply `scrollHeight` to `style.height` (per research.md). Ensure the component tree is preserved (avoid remounting the textarea) to maintain focus/caret position natively.
-- [X] T007 [US2] Update Tailwind classes in `components/MessageInput.tsx` to restructure into a two-tier layout (Attachment bottom-left, others bottom-right) when multiline.
-- [X] T008 [US2] Set `max-height` equivalent to 5 lines of text in `components/MessageInput.tsx` to introduce an inner scrollbar.
+- [X] T013 [US2] Implement auto-resizing textarea logic using `scrollHeight` capped at 5 lines in `components/MessageInput.tsx`
+- [X] T014 [US2] Implement two-tier layout shift (bottom-left/bottom-right) triggered by line count/length in `components/MessageInput.tsx`
+- [X] T015 [US2] Implement CSS `transition-all` for smooth morphing and upward expansion in `components/MessageInput.tsx`
 
-**Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
+**Checkpoint**: Morphing behavior and dynamic height recalculation function correctly.
 
 ---
 
-## Phase 5: User Story 3 - Focus and Interaction Retention (Priority: P2)
+## Phase 6: User Story 3 - Focus and Interaction Retention (Priority: P2)
 
-**Goal**: Keep caret focus during morphs, define keyboard submit/newline rules, and implement disabled Send button loading state.
+**Goal**: Retain textarea focus/caret during morphing, and handle `Enter` (submit) vs `Shift+Enter` (newline).
 
-**Independent Test**: Rapidly adding/removing lines maintains caret position. `Enter` submits and transitions to loading state; `Shift+Enter` adds newline.
+**Independent Test**: Rapid typing and structural shifts do not lose caret focus. `Enter` submits and clears text.
 
 ### Tests for User Story 3 ⚠️
 
-- [X] T009 [P] [US3] Integration test verifying keyboard shortcuts and loading state behavior in `tests/components/MessageInput.test.tsx`
+- [X] T016 [P] [US3] Integration test for keyboard submission and post-submission state in `tests/components/MessageInput.test.tsx`
 
 ### Implementation for User Story 3
 
-- [X] T010 [US3] Implement keyboard event handlers in `components/MessageInput.tsx` (Enter to submit, Shift+Enter for newline).
-- [X] T011 [US3] Implement disabled Send button loading state and clear-input behavior on submit in `components/MessageInput.tsx`.
+- [X] T017 [US3] Implement keyboard event listener for `Enter` (submit) and `Shift+Enter` (newline) in `components/MessageInput.tsx`
+- [X] T018 [US3] Ensure React layout effect does not disrupt caret position during `scrollHeight` update in `components/MessageInput.tsx`
+- [X] T019 [US3] Implement post-submission state (cleared text, disabled send button) in `components/MessageInput.tsx`
 
-**Checkpoint**: All user stories should now be independently functional
+**Checkpoint**: All user stories are implemented and testable.
 
 ---
 
-## Phase 6: Polish & Cross-Cutting Concerns
+## Phase 7: Polish & Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [X] T012 Run quickstart.md validation manually and capture a browser devtools performance profile or frame trace to prove 60fps compliance for the CSS transition animations.
+- [X] T020 Code cleanup and refactoring in `components/MessageInput.tsx` and `components/LoadingOverlay.tsx`
+- [X] T021 Run quickstart.md validation manually
+- [X] T022 Ensure WCAG AA compliance (keyboard navigability, aria-live regions) across components.
 
 ---
 
@@ -114,33 +133,41 @@
 
 - **Setup (Phase 1)**: No dependencies - can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories (Phase 3+)**: All depend on Foundational phase completion
-  - Sequential in priority order (P1 → P2) is recommended here because they all modify `MessageInput.tsx`.
+- **User Stories**: All depend on Foundational phase completion
+- **Polish (Final Phase)**: Depends on all desired user stories being complete
 
 ### User Story Dependencies
 
-- **User Story 1 (P1)**: Can start after Foundational (Phase 2)
-- **User Story 2 (P1)**: Integrates directly with US1 layout changes.
-- **User Story 3 (P2)**: Modifies event handlers within the structure built in US1 and US2.
-
-### Within Each User Story
-
-- Tests MUST be written and FAIL before implementation
-- Core implementation before integration
-- Story complete before moving to next priority
+- **User Story 4 (US4)**: Independent.
+- **User Story 1 (US1)**: Independent.
+- **User Story 2 (US2)**: Depends on US1 layout.
+- **User Story 3 (US3)**: Depends on US2 text area implementations.
 
 ### Parallel Opportunities
 
-- Tests within the same User Story phase (e.g. `tests/components/MessageInput.test.tsx` tests for US2) can theoretically be drafted in parallel to the component logic, but since this is a single file feature, sequential execution is safest.
+- Tests for US4 and US1 can be written in parallel.
+- `LoadingOverlay` (US4) and `MessageInput` (US1) can be developed in parallel since they reside in different files.
 
 ---
+
+## Parallel Example: User Story 1 & 4
+
+```bash
+# Launch test files concurrently
+Task: "Integration test for loading overlay rendering and timeout in tests/components/LoadingOverlay.test.tsx"
+Task: "Integration test for single-line rendering and control distribution in tests/components/MessageInput.test.tsx"
+
+# Implement components concurrently
+Task: "Create LoadingOverlay component layout with centered loader in components/LoadingOverlay.tsx"
+Task: "Refactor MessageInput to a pill-shape layout with inline controls in components/MessageInput.tsx"
+```
 
 ## Implementation Strategy
 
 ### Incremental Delivery
 
 1. Complete Setup + Foundational → Foundation ready
-2. Add User Story 1 → Test independently (MVP pill layout)
-3. Add User Story 2 → Test independently (Morphing card layout)
-4. Add User Story 3 → Test independently (Keyboard & Loading state)
-5. Each story adds value without breaking previous stories
+2. Add User Story 4 (Loading) → Test independently → MVP 1
+3. Add User Story 1 (Single-line Input) → Test independently → MVP 2
+4. Add User Story 2 (Multi-line Morph) → Test independently
+5. Add User Story 3 (Keyboard/Focus) → Test independently

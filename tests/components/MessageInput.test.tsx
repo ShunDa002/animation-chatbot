@@ -1,8 +1,16 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import MessageInput from '@/components/MessageInput';
 import { copy } from '@/lib/ui/copy';
+
+beforeEach(() => {
+  sessionStorage.clear();
+});
+
+afterEach(() => {
+  sessionStorage.clear();
+});
 
 describe('MessageInput - User Story 1 (Single-line Input Entry)', () => {
   it('renders all controls: Attachment, Textarea, Model Selector, Voice, and Send', () => {
@@ -170,6 +178,44 @@ describe('MessageInput - User Story 3 (Focus and Interaction Retention)', () => 
 
     await userEvent.click(stopBtn);
     expect(onStop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MessageInput - Draft Caching in sessionStorage', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('restores cached draft from sessionStorage on mount', () => {
+    sessionStorage.setItem('chat_input_draft', 'Previously saved draft');
+    render(<MessageInput onSend={vi.fn()} disabled={false} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Previously saved draft');
+  });
+
+  it('caches text in sessionStorage when typed', async () => {
+    render(<MessageInput onSend={vi.fn()} disabled={false} />);
+    const textarea = screen.getByRole('textbox');
+    await userEvent.type(textarea, 'Hello draft');
+    expect(sessionStorage.getItem('chat_input_draft')).toBe('Hello draft');
+  });
+
+  it('clears cached draft from sessionStorage when submitted', async () => {
+    const onSend = vi.fn();
+    render(<MessageInput onSend={onSend} disabled={false} />);
+    const textarea = screen.getByRole('textbox');
+    await userEvent.type(textarea, 'Hello draft');
+    expect(sessionStorage.getItem('chat_input_draft')).toBe('Hello draft');
+
+    const sendBtn = screen.getByRole('button', { name: copy.sendLabel });
+    await userEvent.click(sendBtn);
+
+    expect(onSend).toHaveBeenCalledWith('Hello draft');
+    expect(sessionStorage.getItem('chat_input_draft')).toBeNull();
   });
 });
 

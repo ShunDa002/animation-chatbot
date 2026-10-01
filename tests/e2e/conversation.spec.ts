@@ -102,14 +102,32 @@ test.describe('V2: a full turn', () => {
     await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
   });
 
-  test('the log is empty again after a reload (FR-024)', async ({ page }) => {
+  test('threadId and conversation log persist across a page reload (FR-024)', async ({ page }) => {
     await send(page, 'hello');
-    await expect(characterBubbles(page).first()).toBeVisible();
+    await expect(characterBubbles(page).first()).toHaveText(/Hello there\./);
+
+    const threadIdBefore = await page.evaluate(() => sessionStorage.getItem('chat_thread_id'));
+    expect(threadIdBefore).toBeTruthy();
 
     await page.reload();
 
-    await expect(characterBubbles(page)).toHaveCount(0);
-    await expect(visitorBubbles(page)).toHaveCount(0);
+    // Log persists after reload (FR-024)
+    await expect(characterBubbles(page)).toHaveCount(1);
+    await expect(visitorBubbles(page)).toHaveCount(1);
+    await expect(visitorBubbles(page).first()).toContainText('hello');
+
+    // Thread ID persists across reload in sessionStorage (FR-024)
+    const threadIdAfter = await page.evaluate(() => sessionStorage.getItem('chat_thread_id'));
+    expect(threadIdAfter).toBe(threadIdBefore);
+
+    // Visitor can continue conversation after reload
+    await expectCanSendAgain(page);
+  });
+
+  test('unsubmitted draft in textarea persists across a page reload', async ({ page }) => {
+    await page.getByRole('textbox').fill('draft message before reload');
+    await page.reload();
+    await expect(page.getByRole('textbox')).toHaveValue('draft message before reload');
   });
 
   test('history travels onward, bounded to six messages (FR-017)', async ({ page, request }) => {

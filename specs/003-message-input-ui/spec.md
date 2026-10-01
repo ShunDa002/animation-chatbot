@@ -15,6 +15,13 @@
 - Q: What is the expected keyboard behavior for submitting a message when the input is in multi-line mode? → A: Option A - `Enter` submits; `Shift+Enter` adds a newline (Standard chat app convention)
 - Q: What is the exact maximum height for the input area before it stops expanding and introduces an inner scrollbar? → A: max height fixed at exactly 5 lines of text
 - Q: How should the Message Input UI behave immediately after the user submits a prompt while waiting for the AI response? → A: Option A - Clear input, keep text area enabled, and disable the Send button.
+
+### Session 2026-10-01
+
+- Q: What should happen if the backend connection or threadId generation fails? → A: Display an error message with a "Retry" button on the white page.
+- Q: How should the transition from the loading page to the chatbot UI occur? → A: A smooth fade-out of the loading page and fade-in of the chatbot UI.
+- Q: Should there be a timeout limit for the loading state before showing an error message? → A: 30 seconds.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Single-line Input Entry (Priority: P1)
@@ -62,6 +69,22 @@ While the user is typing and the component transitions between single-line and m
 
 ---
 
+### User Story 4 - Loading State and Initialization (Priority: P1)
+
+A user opens the application and sees a full white page with a centrally displayed loader (`public/assets/loader.gif`) while the app connects to the backend and generates a threadId. Once initialization completes, the loading page smoothly fades out and the chatbot UI fades in. If initialization takes longer than 30 seconds or fails, an error message and a "Retry" button are displayed on the white page.
+
+**Why this priority**: Ensures users understand the application is working during initial startup and handles backend unavailability gracefully.
+
+**Independent Test**: Simulating a network delay shows the loader. Passing 30 seconds shows the retry button. Successful connection fades into the UI.
+
+**Acceptance Scenarios**:
+
+1. **Given** the application is loading, **When** the backend connection is pending, **Then** a white page with a centered loader is displayed.
+2. **Given** the backend connects successfully, **When** the threadId is generated, **Then** the loading page fades out and the chatbot UI fades in.
+3. **Given** the connection times out after 30 seconds or fails, **When** the error occurs, **Then** an error message and "Retry" button appear on the loading page.
+
+---
+
 ### Edge Cases
 
 - What happens when the user types a prompt longer than 5 lines? The container stops expanding vertically and introduces an inner scrollbar.
@@ -86,6 +109,10 @@ While the user is typing and the component transitions between single-line and m
 - **FR-012**: System MUST submit the message when the `Enter` key is pressed, and add a newline when `Shift+Enter` is pressed.
 - **FR-013**: System MUST stop expanding the input area and introduce an inner scrollbar when the text exceeds exactly 5 lines.
 - **FR-014**: System MUST clear the input text, keep the text area enabled, and disable the Send action button immediately after submission while waiting for the response.
+- **FR-015**: System MUST display a full white loading page with a centered `public/assets/loader.gif` animation on initial load while waiting for backend connection and threadId generation.
+- **FR-016**: System MUST transition from the loading page to the chatbot UI using a smooth fade-out/fade-in animation once the backend connects and threadId is generated.
+- **FR-017**: System MUST display an error message and a "Retry" button on the loading page if the backend connection or threadId generation fails or times out after 30 seconds.
+
 ### Key Entities
 
 - **MessageInput State**: Manages the current text value, line count, and active layout mode (single-line vs multi-line).

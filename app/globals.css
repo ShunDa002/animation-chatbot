@@ -18,6 +18,7 @@
   --accent: #5b8def;
   --on-accent: #0b1020;
   --border: #313547;
+  --model-hover: #232736;
 
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
@@ -47,6 +48,7 @@
   --color-accent: #5b8def;
   --color-on-accent: #0b1020;
   --color-border: #313547;
+  --color-model-hover: #232736;
 
   --radius-bubble: 0.875rem;
   --radius-control: 0.5rem;
