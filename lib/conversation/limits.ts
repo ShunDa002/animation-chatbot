@@ -26,7 +26,10 @@ export interface Message {
   text: string;
   status: MessageStatus;
   toolCalls?: ToolCallRecord[];
+  interruptId?: string;
+  interruptDecision?: 'yes' | 'no';
 }
+
 
 /** How many characters the visitor may still type. Never negative. */
 export function remainingCharacters(current: string): number {

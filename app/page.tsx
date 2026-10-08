@@ -26,6 +26,7 @@ export default function Page() {
 
   const handleNewChat = () => {
     setIsSidebarOpen(false);
+    void conversation.startNewChat?.();
   };
 
   const handleRetryConnection = () => {
@@ -51,6 +52,12 @@ export default function Page() {
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
         onNewChat={handleNewChat}
+        onSelectConversation={(id, threadId) => {
+          const targetThreadId = threadId || id;
+          void conversation.loadHistory?.(targetThreadId);
+          setIsSidebarOpen(false);
+        }}
+        activeThreadId={conversation.threadId}
       />
 
       {/* Main stage area */}

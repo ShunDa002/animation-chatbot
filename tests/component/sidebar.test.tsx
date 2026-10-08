@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Sidebar from '@/components/Sidebar';
-import type { MockConversationListItem } from '@/components/Sidebar';
+import type { ConversationItem } from '@/components/Sidebar';
 
 describe('Sidebar Component (T120, FR-001, FR-003)', () => {
-  const mockConversations: MockConversationListItem[] = [
-    { id: 'mock-1', title: 'Catching up with Aria', date: 'Today' },
-    { id: 'mock-2', title: 'Live2D Animation Basics', date: 'Yesterday' },
+  const sampleConversations: ConversationItem[] = [
+    { id: 'conv-1', title: 'Catching up with Aria', date: 'Today' },
+    { id: 'conv-2', title: 'Live2D Animation Basics', date: 'Yesterday' },
   ];
 
   it('renders New Chat button and triggers onNewChat callback', async () => {
@@ -21,8 +21,8 @@ describe('Sidebar Component (T120, FR-001, FR-003)', () => {
     expect(onNewChat).toHaveBeenCalledTimes(1);
   });
 
-  it('renders mock past conversations list with titles and dates', () => {
-    render(<Sidebar conversations={mockConversations} />);
+  it('renders passed past conversations list with titles and dates', () => {
+    render(<Sidebar conversations={sampleConversations} />);
 
     expect(screen.getByText('Catching up with Aria')).toBeTruthy();
     expect(screen.getByText('Today')).toBeTruthy();
@@ -30,10 +30,19 @@ describe('Sidebar Component (T120, FR-001, FR-003)', () => {
     expect(screen.getByText('Yesterday')).toBeTruthy();
   });
 
-  it('renders default mock conversations when conversations prop is omitted', () => {
+  it('renders conversations from fetch when conversations prop is omitted', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [
+        { id: 'c-1', threadId: 't-1', title: 'Dynamic Chat 1', createdAt: '2026-10-08T10:00:00Z', updatedAt: '2026-10-08T10:00:00Z' },
+        { id: 'c-2', threadId: 't-2', title: 'Dynamic Chat 2', createdAt: '2026-10-07T10:00:00Z', updatedAt: '2026-10-07T10:00:00Z' },
+      ],
+    });
+
     render(<Sidebar />);
 
-    const list = screen.getByRole('list', { name: /past conversations/i });
+    const list = await screen.findByRole('list', { name: /past conversations/i });
     expect(list).toBeTruthy();
     expect(list.children.length).toBeGreaterThan(0);
   });
@@ -42,13 +51,13 @@ describe('Sidebar Component (T120, FR-001, FR-003)', () => {
     const onSelectConversation = vi.fn();
     render(
       <Sidebar
-        conversations={mockConversations}
+        conversations={sampleConversations}
         onSelectConversation={onSelectConversation}
       />,
     );
 
     await userEvent.click(screen.getByText('Catching up with Aria'));
-    expect(onSelectConversation).toHaveBeenCalledWith('mock-1');
+    expect(onSelectConversation).toHaveBeenCalledWith('conv-1');
   });
 
   it('renders close button on mobile and calls onClose when clicked', async () => {

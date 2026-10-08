@@ -116,3 +116,53 @@ The value should match what the interrupted node expects. If the node expects a 
   "interrupt_id": "efc95671440bc6dae53e7dae128777a4",
   "resume": true
 }
+
+# Backend Endpoints
+Expected lifecycle
+
+For an interrupted initial request:
+
+POST /chat
+→ start
+→ tool_call_delta
+→ interrupt
+→ HTTP stream closes
+
+
+No done event is emitted.
+
+For a resumed and completed request:
+
+POST /chat/resume
+→ start with operation="resume"
+→ tool_result
+→ token events
+→ done
+→ HTTP stream closes
+
+*Note: If the resumed execution completes immediately with no further messages, the backend may respond with a plain JSON object (e.g., `{"success": true}`) instead of an NDJSON stream.*
+
+The request format that will be sent to backend as follows:
+{
+  "thread_id": "123",
+  "user_input": "Buy 10 shares of META"
+}
+
+
+
+If the resumed workflow reaches another interrupt:
+
+POST /chat/resume
+→ start with operation="resume"
+→ zero or more events
+→ interrupt
+→ HTTP stream closes
+
+The request format that will be sent to backend to resume as follows:
+{
+  "thread_id": "123",
+  "resume": "yes",
+  "interrupt_id": "efc95671440bc6dae53e7dae128777a4"
+}
+
+The shared generator correctly supports repeated pause-and-resume cycles because every run processes updates and suppresses done whenever it detects __interrupt__.

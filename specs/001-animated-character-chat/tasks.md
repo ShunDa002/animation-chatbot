@@ -103,7 +103,7 @@ idle, and a broken `modelUrl` shows the still image instead. No conversation or 
 - [X] T032 [US1] Create `components/CharacterStage.tsx` - client-only via `next/dynamic` with `{ ssr: false }`, owning `createCharacter` in a mount effect and `destroy()` in its cleanup so React Strict Mode's double-invoke exposes a missing teardown (research D3, FR-013), and exposing a dev-console handle for manually triggering a reaction so this story is testable with no chat
 - [X] T033 [P] [US1] Create `components/StillCharacter.tsx` rendering `public/live2d/still.png` from T010 with a text alternative, shown when `onUnavailable` fires or WebGL is absent, with the conversation area untouched (FR-012)
 - [X] T034 [US1] Give the character container `role="img"` with an `aria-label` naming the character and its current emotional state in `components/CharacterStage.tsx`, updated from `onLabelChange` on every emotion change (FR-038)
-- [X] T035 [P] [US1] Mount `CharacterStage` in `app/page.tsx` and add the rig attribution the vendored license requires as visible page text (research D4 license obligation)
+- [X] T035 [P] [US1] Mount `CharacterStage` in `app/page.tsx`
 
 **Checkpoint**: User Story 1 is fully functional and demonstrable on its own - an animated character
 on a page with no chat wired up. This is the MVP.
@@ -216,8 +216,8 @@ for the whole wait and leaves it when text starts arriving.
 - [ ] T072 Record the 60fps measurement on the baseline device - a devtools frame trace or browser frame-rendering stats across idle, reaction, and thinking states - and attach it to the PR, since headless WebGL cannot assert SC-003 in CI. This is also the only evidence for FR-011's smoothness requirement (FR-011, SC-003, constitution IV, research D11)
 - [X] T073 [P] Verify the credential never reaches the browser by grepping the built `.next/static` output for the `GROQ_API_KEY` value and for the persona text, and add that grep as a step in the build or CI script (FR-025, FR-026)
 - [ ] T074 Live-provider cue-compliance run against the real Groq endpoint, recorded in the PR: 20 varied real turns, counting how many replies carry a well-formed cue that maps to a reaction. SC-006's 90% bar is a claim about the model's compliance, which fixtures cannot measure because they supply the cue themselves. Costs 20 of the day's 150 (SC-006, SC-007)
-- [X] T075 [P] Write `README.md`: what the demo is, the setup steps from [quickstart.md](./quickstart.md), the confirmed PixiJS and renderer version pair from T003, the rig attribution, and the Vercel deployment steps including the Upstash integration
-- [X] T076 Run the full pre-deploy checklist at the end of [quickstart.md](./quickstart.md) - `npm run build`, `npm run lint`, `npm test`, and `npm run test:e2e` all green, Upstash provisioned and incrementing, license vendored and attribution visible
+- [X] T075 [P] Write `README.md`: what the demo is, the setup steps from [quickstart.md](./quickstart.md), the confirmed PixiJS and renderer version pair from T003, and the Vercel deployment steps including the Upstash integration
+- [X] T076 Run the full pre-deploy checklist at the end of [quickstart.md](./quickstart.md) - `npm run build`, `npm run lint`, `npm test`, and `npm run test:e2e` all green, Upstash provisioned and incrementing
 
 ---
 
@@ -969,7 +969,7 @@ Each step adds value without breaking previous steps.
 
 - [X] T131 Remove `components/SpeechBubble.tsx`.
 - [X] T132 Refactor `app/page.tsx` and `components/CharacterArea.tsx`: remove `SpeechBubble` rendering logic and props.
-- [X] T133 Refactor `components/MessageLog.tsx`: implement a temporary typing/thinking indicator message bubble that appears at the bottom of the log when `conversation.status === 'waiting'`. Ensure it respects `prefers-reduced-motion` for any animations (FR-014, FR-040).
+- [X] T133 Refactor `components/MessageLog.tsx`: implement a typing/thinking indicator inside the empty AI message bubble when `conversation.status === 'waiting'`. Ensure it respects `prefers-reduced-motion` for any animations (FR-014, FR-040).
 - [X] T134 Full validation pass: run all tests (`npm test`, `npm run test:e2e`) to confirm no regressions and that the typing indicator correctly displays in the chat panel.
 
 **Checkpoint**: The speech bubble is removed and the chat panel natively handles the thinking indicator state.

@@ -1,25 +1,13 @@
 # Tasks: message-input-ui
 
-**Input**: Design documents from `specs/003-message-input-ui/`
-
-**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
-
-**Tests**: The constitution mandates testing. Test tasks are included and must run before implementation.
-
-**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
-
-## Format: `[ID] [P?] [Story] Description`
-
-- **[P]**: Can run in parallel (different files, no dependencies)
-- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
-- Include exact file paths in descriptions
+**Input**: Design documents from `/specs/003-message-input-ui/`
 
 ## Phase 1: Setup (Shared Infrastructure)
 
 **Purpose**: Project initialization and basic structure
 
-- [X] T001 [P] Ensure Tailwind CSS configuration covers required colors (e.g. #232736) in `app/globals.css` or equivalent config.
-- [X] T002 [P] Set up basic test files in `tests/components/MessageInput.test.tsx` and `tests/components/LoadingOverlay.test.tsx`.
+- [x] T001 Create `LoadingSkeleton` component for shared loading states in `components/LoadingSkeleton.tsx`
+- [x] T002 [P] Create `ChatInput` component shell in `components/ChatInput.tsx`
 
 ---
 
@@ -27,103 +15,169 @@
 
 **Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
-**⚠️ CRITICAL**: No user story work can begin until this phase is complete
+- [x] T003 Update global UI types for `MessageInputState` and `Conversation` in `lib/conversation/types.ts` (create file if it doesn't exist)
+- [x] T004 Implement mock/stub API handlers for `POST /threads` and `GET /conversations` to allow frontend development in `lib/api/mocks.ts`
 
-- [X] T003 Create interface contracts (Props) for `MessageInput` and `LoadingOverlay` in their respective files.
-
-**Checkpoint**: Foundation ready - user story implementation can now begin.
-
----
-
-## Phase 3: User Story 4 - Loading State and Initialization (Priority: P1) 🎯 MVP
-
-**Goal**: Display a white loading page with a loader, handle a 30-second timeout, and fade into the chatbot UI.
-
-**Independent Test**: Simulating a network delay shows the loader. Passing 30 seconds shows the retry button. Successful connection fades into the UI.
-
-### Tests for User Story 4 ⚠️
-
-> **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
-
-- [X] T004 [P] [US4] Integration test for loading overlay rendering and timeout in `tests/components/LoadingOverlay.test.tsx`
-
-### Implementation for User Story 4
-
-- [X] T005 [US4] Create `LoadingOverlay` component layout with centered loader in `components/LoadingOverlay.tsx`
-- [X] T006 [US4] Implement CSS transitions for fade-in/fade-out in `components/LoadingOverlay.tsx`
-- [X] T007 [US4] Implement 30-second timeout and retry button logic in `components/LoadingOverlay.tsx`
-
-**Checkpoint**: At this point, the LoadingOverlay should be fully functional and testable independently.
+**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
 ---
 
-## Phase 4: User Story 1 - Single-line Input Entry (Priority: P1)
+## Phase 3: User Story 1 - Single-line Input Entry (Priority: P1) 🎯 MVP
 
-**Goal**: Render the default pill-shaped input with inline controls (Attachment, Text, Model Selector, Voice, Send).
+**Goal**: A user begins typing a short message in the compact, pill-shaped input bar. All interactive controls remain inline horizontally.
 
-**Independent Test**: Renders as a dark-theme pill. Text fits on a single line, and controls remain horizontally inline.
+**Independent Test**: The component renders as a pill-shaped dark-theme container. Typing a single line of text preserves the inline horizontal distribution of all controls.
 
-### Tests for User Story 1 ⚠️
+### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
 
-- [X] T008 [P] [US1] Integration test for single-line rendering and control distribution in `tests/components/MessageInput.test.tsx`
+- [x] T005 [P] [US1] Component test for single-line rendering in `tests/components/ChatInput.test.tsx`
 
 ### Implementation for User Story 1
 
-- [X] T009 [US1] Refactor `MessageInput` to a pill-shape layout with inline controls and remove textarea border focus in `components/MessageInput.tsx`
-- [X] T010 [US1] Implement dummy model selector dropdown (headless or styled select) meeting #232736 hover requirement in `components/MessageInput.tsx`
-- [X] T011 [US1] Implement dummy attachment, voice, and send buttons (cobalt blue, upward arrow icon) in `components/MessageInput.tsx`
+- [x] T006 [US1] Implement default pill-shaped CSS styles and layout in `components/ChatInput.tsx`
+- [x] T007 [P] [US1] Implement inline controls (Attachment, Textarea, Model Selector, Voice, Send) in `components/ChatInput.tsx`
+- [x] T008 [P] [US1] Integrate dynamic Model Selector dropdown with `POST /models` in `components/ChatInput.tsx`
 
-**Checkpoint**: Single-line layout works independently.
+**Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
 ---
 
-## Phase 5: User Story 2 - Multi-line Morph and Dual-Zone Layout (Priority: P1)
+## Phase 4: User Story 2 - Multi-line Morph and Dual-Zone Layout (Priority: P1)
 
-**Goal**: Smoothly morph the pill into a two-tier card when text exceeds 36 chars or wraps, maintaining controls at the bottom.
+**Goal**: A user types a longer message that exceeds 36 characters or wraps to a second line, causing the pill-shaped input to smoothly morph into a multi-line composition card.
 
-**Independent Test**: Typing a long sentence morphs the layout into a card, moving controls to the bottom-left and bottom-right.
+**Independent Test**: Typing enough text to exceed 36 characters or wrap to a second line triggers the morph into a rounded rectangle, and controls rearrange into a bottom footer.
 
-### Tests for User Story 2 ⚠️
+### Tests for User Story 2
 
-- [X] T012 [P] [US2] Integration test for multi-line transition and max-height capping in `tests/components/MessageInput.test.tsx`
+- [x] T009 [P] [US2] Component test for morphing behavior on long text in `tests/components/ChatInput.test.tsx`
 
 ### Implementation for User Story 2
 
-- [X] T013 [US2] Implement auto-resizing textarea logic using `scrollHeight` capped at 5 lines in `components/MessageInput.tsx`
-- [X] T014 [US2] Implement two-tier layout shift (bottom-left/bottom-right) triggered by line count/length in `components/MessageInput.tsx`
-- [X] T015 [US2] Implement CSS `transition-all` for smooth morphing and upward expansion in `components/MessageInput.tsx`
+- [x] T010 [US2] Implement dynamic line calculation and `isMultiLine` state detection in `components/ChatInput.tsx`
+- [x] T011 [US2] Add CSS transitions (border-radius, padding, layout) for morphing between single-line and multi-line states in `components/ChatInput.tsx`
+- [x] T012 [US2] Restructure layout rendering to two-tier footer when `isMultiLine` is true in `components/ChatInput.tsx`
+- [x] T013 [US2] Add inner scrollbar logic when text exceeds exactly 5 lines in `components/ChatInput.tsx`
 
-**Checkpoint**: Morphing behavior and dynamic height recalculation function correctly.
+**Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
 ---
 
-## Phase 6: User Story 3 - Focus and Interaction Retention (Priority: P2)
+## Phase 5: User Story 3 - Focus and Interaction Retention (Priority: P2)
 
-**Goal**: Retain textarea focus/caret during morphing, and handle `Enter` (submit) vs `Shift+Enter` (newline).
+**Goal**: While the user is typing and the component transitions between single-line and multi-line modes, the text cursor and selection state remain uninterrupted.
 
-**Independent Test**: Rapid typing and structural shifts do not lose caret focus. `Enter` submits and clears text.
-
-### Tests for User Story 3 ⚠️
-
-- [X] T016 [P] [US3] Integration test for keyboard submission and post-submission state in `tests/components/MessageInput.test.tsx`
+**Independent Test**: Rapidly adding and removing lines while typing does not cause the text area to lose focus or reset the caret position.
 
 ### Implementation for User Story 3
 
-- [X] T017 [US3] Implement keyboard event listener for `Enter` (submit) and `Shift+Enter` (newline) in `components/MessageInput.tsx`
-- [X] T018 [US3] Ensure React layout effect does not disrupt caret position during `scrollHeight` update in `components/MessageInput.tsx`
-- [X] T019 [US3] Implement post-submission state (cleared text, disabled send button) in `components/MessageInput.tsx`
-
-**Checkpoint**: All user stories are implemented and testable.
+- [x] T014 [US3] Refactor textarea to use a hidden span or height adjustment to prevent unmounts in `components/ChatInput.tsx`
+- [x] T015 [US3] Implement `Enter` and `Shift+Enter` key handlers without losing focus in `components/ChatInput.tsx`
 
 ---
 
-## Phase 7: Polish & Cross-Cutting Concerns
+## Phase 6: User Story 4 - Loading State and Initialization (Priority: P1)
+
+**Goal**: A user opens the application and sees a full white page with a centrally displayed loader while the app connects to the backend and generates a threadId.
+
+**Independent Test**: Simulating a network delay shows the loader. Passing 30 seconds shows the retry button. Successful connection fades into the UI.
+
+### Tests for User Story 4
+
+- [x] T015a [P] [US4] E2E test for full-page loading and timeout retry in `tests/e2e/message-input.spec.ts`
+
+### Implementation for User Story 4
+
+- [x] T016 [US4] Implement full-page loading state in main page `app/page.tsx`
+- [x] T017 [US4] Implement initialization timeout and retry error boundary in `app/page.tsx`
+- [x] T018 [US4] Add CSS fade-out/fade-in transitions between loading and main app view in `app/page.tsx`
+
+---
+
+## Phase 7: User Story 5 - HITL Confirmation UI (Priority: P1)
+
+**Goal**: Handle HITL interrupt by disabling main input and showing inline confirmation.
+
+**Independent Test**: Simulating an interrupted message displays the card. Clicking Yes/No triggers `POST /chat/resume`.
+
+### Tests for User Story 5
+
+- [x] T018a [P] [US5] Component test for `InterruptCard` and API submission in `tests/components/InterruptCard.test.tsx`
+
+### Implementation for User Story 5
+
+- [x] T019 [US5] Implement `InterruptCard` inline UI component in `components/MessageList.tsx`
+- [x] T020 [US5] Implement `POST /chat/resume` submission logic on Yes/No click in `components/MessageList.tsx`
+- [x] T021 [US5] Implement UI state update to disable main input when interrupt is pending in `components/ChatInput.tsx`
+
+---
+
+## Phase 8: User Story 6 - Stop Generation (Priority: P1)
+
+**Goal**: User can immediately cancel the ongoing AI generation stream.
+
+**Independent Test**: Submitting a prompt displays the Stop button. Pressing Escape or clicking Stop aborts the stream.
+
+### Tests for User Story 6
+
+- [x] T021a [P] [US6] E2E test for stopping generation and restoring prompt on failure in `tests/e2e/message-input.spec.ts`
+
+### Implementation for User Story 6
+
+- [x] T022 [US6] Modify Send button to render as Stop button when `isStreaming` is true in `components/ChatInput.tsx`
+- [x] T023 [US6] Add `Escape` key listener for stop action in `components/ChatInput.tsx`
+- [x] T024 [US6] Implement `POST /chat/stop` API call and append "(Stopped)" indicator in `components/MessageList.tsx`
+- [x] T024a [US6] Implement logic to re-enable input and restore user prompt if stream fails in `components/ChatInput.tsx`
+
+---
+
+## Phase 9: User Story 7 - Sidebar Conversations Fetching (Priority: P1)
+
+**Goal**: Sidebar fetches and displays past conversations, sorted by date.
+
+**Independent Test**: Mocking `/conversations` endpoint reveals skeleton loader, then list, or error UI.
+
+### Tests for User Story 7
+
+- [x] T025 [P] [US7] E2E test for Sidebar conversations fetch in `tests/e2e/message-input.spec.ts`
+
+### Implementation for User Story 7
+
+- [x] T026 [US7] Implement `GET /conversations` fetch logic inside `components/Sidebar.tsx`
+- [x] T027 [US7] Implement skeleton loader while fetching in `components/Sidebar.tsx`
+- [x] T028 [US7] Implement error boundary with Retry button in `components/Sidebar.tsx`
+- [x] T029 [US7] Sort items by date descending and handle empty state ("No conversations") in `components/Sidebar.tsx`
+
+---
+
+## Phase 10: User Story 8 - Loading Conversation History (Priority: P1)
+
+**Goal**: Clicking a conversation loads its history in the main chat area.
+
+**Independent Test**: Clicking a conversation reveals a skeleton loader, then messages scrolled to bottom.
+
+### Tests for User Story 8
+
+- [x] T029a [P] [US8] E2E test for loading history and updating sidebar on new chat in `tests/e2e/message-input.spec.ts`
+
+### Implementation for User Story 8
+
+- [x] T030 [US8] Integrate `New Chat` button `POST /threads` click handler in `components/Sidebar.tsx`
+- [x] T030a [US8] Integrate submit handler to append newly created thread to sidebar only after first message is sent in `components/Sidebar.tsx`
+- [x] T031 [US8] Implement `GET /history/{thread_id}` fetch logic on item click in `app/page.tsx`
+- [x] T032 [US8] Display skeleton loader or spinner in main chat area during history load in `components/MessageList.tsx`
+- [x] T033 [US8] Implement auto-scroll to bottom upon successful history render in `components/MessageList.tsx`
+
+---
+
+## Phase 11: Polish & Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [X] T020 Code cleanup and refactoring in `components/MessageInput.tsx` and `components/LoadingOverlay.tsx`
-- [X] T021 Run quickstart.md validation manually
-- [X] T022 Ensure WCAG AA compliance (keyboard navigability, aria-live regions) across components.
+- [x] T034 [P] Verify WCAG AA focus accessibility across new input components
+- [x] T035 Review CSS transitions to ensure strictly 60fps compositor thread properties
+- [x] T036 Run quickstart.md validation manually
+- [x] T037 [P] Clean up any mock/stub data used during Phase 2
 
 ---
 
@@ -133,41 +187,42 @@
 
 - **Setup (Phase 1)**: No dependencies - can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories**: All depend on Foundational phase completion
+- **User Stories (Phase 3+)**: All depend on Foundational phase completion
+  - User stories can then proceed in parallel (if staffed)
+  - Or sequentially in priority order (P1 → P2 → P3)
 - **Polish (Final Phase)**: Depends on all desired user stories being complete
 
 ### User Story Dependencies
 
-- **User Story 4 (US4)**: Independent.
-- **User Story 1 (US1)**: Independent.
-- **User Story 2 (US2)**: Depends on US1 layout.
-- **User Story 3 (US3)**: Depends on US2 text area implementations.
+- **User Story 1 (P1)**: Can start after Foundational (Phase 2)
+- **User Story 2 (P1)**: Depends on User Story 1 (requires base ChatInput layout)
+- **User Story 3 (P2)**: Depends on User Story 2 (requires morphing state to test retention)
+- **User Story 4 (P1)**: Independent. Can start after Foundational.
+- **User Story 5 (P1)**: Independent. Can start after Foundational.
+- **User Story 6 (P1)**: Depends on User Story 1 (requires Send button)
+- **User Story 7 (P1)**: Independent. Modifies `Sidebar.tsx`.
+- **User Story 8 (P1)**: Depends on User Story 7.
 
 ### Parallel Opportunities
 
-- Tests for US4 and US1 can be written in parallel.
-- `LoadingOverlay` (US4) and `MessageInput` (US1) can be developed in parallel since they reside in different files.
+- Phase 6 (US4), Phase 7 (US5), Phase 9 (US7) can run completely in parallel with the `ChatInput` phases (US1-3, US6) since they affect different areas of the application (`Sidebar.tsx`, `page.tsx`).
 
 ---
 
-## Parallel Example: User Story 1 & 4
-
-```bash
-# Launch test files concurrently
-Task: "Integration test for loading overlay rendering and timeout in tests/components/LoadingOverlay.test.tsx"
-Task: "Integration test for single-line rendering and control distribution in tests/components/MessageInput.test.tsx"
-
-# Implement components concurrently
-Task: "Create LoadingOverlay component layout with centered loader in components/LoadingOverlay.tsx"
-Task: "Refactor MessageInput to a pill-shape layout with inline controls in components/MessageInput.tsx"
-```
-
 ## Implementation Strategy
+
+### MVP First (User Story 1 Only)
+
+1. Complete Phase 1: Setup
+2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
+3. Complete Phase 3: User Story 1
+4. **STOP and VALIDATE**: Test User Story 1 independently
+5. Deploy/demo if ready
 
 ### Incremental Delivery
 
 1. Complete Setup + Foundational → Foundation ready
-2. Add User Story 4 (Loading) → Test independently → MVP 1
-3. Add User Story 1 (Single-line Input) → Test independently → MVP 2
-4. Add User Story 2 (Multi-line Morph) → Test independently
-5. Add User Story 3 (Keyboard/Focus) → Test independently
+2. Add User Story 1 (ChatInput Base) → Test independently
+3. Add User Story 2 & 3 (ChatInput Morph) → Test independently
+4. Add User Story 7 & 8 (Sidebar & History) → Test independently
+5. Add User Story 4, 5, 6 (Loading, HITL, Stop) → Test independently

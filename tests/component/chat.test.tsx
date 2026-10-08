@@ -34,6 +34,12 @@ function mockConversation(overrides: Partial<Conversation> = {}): Conversation {
     notice: null,
     announcement: null,
     send: vi.fn(),
+    resume: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+    isHistoryLoading: false,
+    historyError: null,
+    loadHistory: vi.fn().mockResolvedValue(undefined),
+    retryHistory: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -175,6 +181,154 @@ describe('ChatPanel (FR-045)', () => {
 
     expect(screen.getByTestId('thinking-dots')).toBeTruthy();
   });
+
+  it('disables message input when an interrupted message is present (FR-018, FR-019)', () => {
+    render(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'idle',
+          inFlight: false,
+          threadId: 'uuid-1234',
+          messages: [
+            {
+              id: 'msg-1',
+              author: 'character',
+              text: 'Awaiting your approval...',
+              status: 'interrupted',
+            },
+          ],
+        })}
+      />,
+    );
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(textarea.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: copy.sendLabel })).toHaveProperty('disabled', true);
+    expect(screen.getByText('Awaiting approval...')).toBeTruthy();
+  });
+
+  it('renders HitlConfirmation card attached to interrupted message (FR-021, US5)', () => {
+    render(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'idle',
+          inFlight: false,
+          threadId: 'uuid-1234',
+          messages: [
+            {
+              id: 'msg-1',
+              author: 'character',
+              text: 'Approve buying 10 shares of META? (yes/no)',
+              status: 'interrupted',
+              interruptId: 'int-789',
+            },
+          ],
+        })}
+      />,
+    );
+
+    const confirmationCard = screen.getByRole('region', { name: /confirmation/i });
+    expect(confirmationCard).toBeTruthy();
+    expect(screen.getByRole('button', { name: /yes/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /no/i })).toBeTruthy();
+  });
+
+  it('restores draft into message input when status transitions to error (FR-020)', async () => {
+    const send = vi.fn();
+    const { rerender } = render(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'idle',
+          inFlight: false,
+          threadId: 'uuid-1234',
+          send,
+        })}
+      />,
+    );
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    await userEvent.type(textarea, 'Buy 10 shares{Enter}');
+
+    expect(send).toHaveBeenCalledWith('Buy 10 shares');
+    expect(textarea.value).toBe('');
+
+    // Stream fails with error
+    rerender(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'error',
+          notice: copy.failedGeneric,
+          inFlight: false,
+          threadId: 'uuid-1234',
+          send,
+        })}
+      />,
+    );
+
+    // Textarea is re-enabled and draft is restored
+    expect(textarea.disabled).toBe(false);
+    expect(textarea.value).toBe('Buy 10 shares');
+  });
+
+  it('renders Stop button during streaming and invokes conversation.stop on click or Escape', async () => {
+    const stopMock = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChatPanel
+        conversation={mockConversation({
+          status: 'streaming',
+          inFlight: true,
+          stop: stopMock,
+        })}
+      />,
+    );
+
+    const stopBtn = screen.getByRole('button', { name: copy.stopLabel });
+    expect(stopBtn).toBeTruthy();
+
+    await userEvent.click(stopBtn);
+    expect(stopMock).toHaveBeenCalledTimes(1);
+
+    const textarea = screen.getByRole('textbox');
+    await userEvent.type(textarea, '{Escape}');
+    expect(stopMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits user input and selected model to conversation.send', async () => {
+    const send = vi.fn();
+    const mockModels = ['model-standard', 'model-fast'];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation((url, options) => {
+      if (String(url).endsWith('/models') && options?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(mockModels),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') });
+    });
+
+    try {
+      render(
+        <ChatPanel
+          conversation={mockConversation({
+            threadId: 'thread-test-789',
+            send,
+          })}
+        />,
+      );
+
+      const modelSelect = (await screen.findByRole('combobox', { name: copy.modelSelectLabel })) as HTMLSelectElement;
+      await userEvent.selectOptions(modelSelect, 'model-fast');
+
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      await userEvent.type(textarea, 'Testing model selection{Enter}');
+
+      expect(send).toHaveBeenCalledWith('Testing model selection', 'model-fast');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 describe('MessageLog', () => {
@@ -296,6 +450,39 @@ describe('MessageLog', () => {
     dots.forEach((dot) => {
       expect(dot.className).toContain('motion-reduce:animate-none');
     });
+  });
+
+  it('renders subtle (Stopped) indicator when message status is cancelled (FR-025)', () => {
+    render(
+      <MessageLog
+        messages={[
+          message({ author: 'character', text: 'This was cancel', status: 'cancelled' }),
+        ]}
+      />,
+    );
+
+    const indicator = screen.getByTestId('stopped-indicator');
+    expect(indicator).toBeTruthy();
+    expect(indicator.textContent).toBe('(Stopped)');
+  });
+
+  it('does not render empty failed character message when subsequent message is sent', () => {
+    const { container } = render(
+      <MessageLog
+        messages={[
+          message({ id: 'visitor-1', author: 'visitor', text: 'First user message' }),
+          message({ id: 'char-1', author: 'character', text: '', status: 'streaming' }),
+          message({ id: 'visitor-2', author: 'visitor', text: 'Second user message' }),
+        ]}
+        status="idle"
+      />,
+    );
+
+    // char-1 has no content and is not the active streaming message, so it must not render
+    expect(screen.queryByTestId('thinking-dots')).toBeNull();
+    expect(container.querySelectorAll('.message.character')).toHaveLength(0);
+    expect(screen.getByText('First user message')).toBeTruthy();
+    expect(screen.getByText('Second user message')).toBeTruthy();
   });
 });
 

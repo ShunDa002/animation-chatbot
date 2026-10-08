@@ -537,6 +537,32 @@ describe('StreamController - User Story 1 (Core streaming path)', () => {
       expect(metrics.timeToFirstToken).toBeGreaterThanOrEqual(0);
     });
 
+    it('calls onInterrupt when interrupt event is received before stream end', () => {
+      const onInterrupt = vi.fn();
+      const onInterrupted = vi.fn();
+      const controller = createStreamController({ onInterrupt, onInterrupted });
+
+      controller.processChunk(
+        encoder.encode(
+          '{"type":"start","thread_id":"t1"}\n{"type":"interrupt","thread_id":"t1","interrupt_id":"int-1","value":"Approve?","resumable":true}\n',
+        ),
+      );
+      controller.end();
+
+      expect(onInterrupt).toHaveBeenCalledTimes(1);
+      const [interruptEvent, text, emotion, metrics] = onInterrupt.mock.calls[0]!;
+      expect(interruptEvent).toEqual({
+        type: 'interrupt',
+        thread_id: 't1',
+        interrupt_id: 'int-1',
+        value: 'Approve?',
+        resumable: true,
+      });
+      expect(metrics.outcome).toBe('interrupted');
+      expect(metrics.eventCounts.interrupt).toBe(1);
+      expect(onInterrupted).not.toHaveBeenCalled();
+    });
+
     it('populates metrics fields for cancelled outcome', () => {
       const onCancelled = vi.fn();
       const controller = createStreamController({ onCancelled });

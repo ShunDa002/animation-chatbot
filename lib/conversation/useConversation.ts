@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NEUTRAL, type Emotion } from '@/lib/emotion';
-import { isSendable, type Message } from '@/lib/conversation/limits';
+import { isSendable, type Message, type MessageStatus } from '@/lib/conversation/limits';
 import { createStreamController, type StreamController } from '@/lib/conversation/stream-controller';
-import { createThread, sendMessage } from '@/lib/conversation/backend';
+import { createThread, sendMessage, resumeChat, stopChat, fetchConversations, type ConversationSummary, fetchHistory, type HistoryMessageItem } from '@/lib/conversation/backend';
 import { copy } from '@/lib/ui/copy';
+
+export { fetchConversations, type ConversationSummary, fetchHistory, type HistoryMessageItem };
 
 /**
  * The conversation layer. Knows nothing about rendering.
@@ -43,7 +45,14 @@ export interface Conversation {
    * from this rather than being handed it, so nothing needs clearing and no announcement is lost.
    */
   announcement: string | null;
-  send(draft: string): void;
+  send(draft: string, model?: string): void;
+  resume(decision: 'yes' | 'no', interruptId?: string, targetMessageId?: string): Promise<void>;
+  stop: () => Promise<void>;
+  isHistoryLoading?: boolean;
+  historyError?: string | null;
+  loadHistory?: (threadId: string) => Promise<void>;
+  retryHistory?: () => Promise<void>;
+  startNewChat?: () => Promise<string | null>;
 }
 
 let sequence = 0;
@@ -81,17 +90,26 @@ function getInitialSession(): {
             const parsed = JSON.parse(storedMessages);
             if (Array.isArray(parsed)) {
               const seenIds = new Set<string>();
-              messages = parsed.map((m: Message) => {
-                let id = m.id;
-                if (!id || seenIds.has(id)) {
-                  id = nextId(m.author || 'msg');
-                }
-                seenIds.add(id);
-                if (m.status === 'streaming') {
-                  return { ...m, id, status: 'interrupted' as const };
-                }
-                return { ...m, id };
-              });
+              messages = parsed
+                .map((m: Message) => {
+                  let id = m.id;
+                  if (!id || seenIds.has(id)) {
+                    id = nextId(m.author || 'msg');
+                  }
+                  seenIds.add(id);
+                  if (
+                    m.author === 'character' &&
+                    (!m.text || m.text.trim().length === 0) &&
+                    (!m.toolCalls || m.toolCalls.length === 0)
+                  ) {
+                    return null;
+                  }
+                  if (m.status === 'streaming') {
+                    return { ...m, id, status: 'interrupted' as const };
+                  }
+                  return { ...m, id };
+                })
+                .filter((m): m is Message => m !== null);
             }
           } catch {
             // Ignore parse errors
@@ -116,6 +134,10 @@ export function useConversation(): Conversation {
   const [emotion, setEmotion] = useState<Emotion>(NEUTRAL);
   const [notice, setNotice] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const activeHistoryThreadIdRef = useRef<string | null>(null);
+  const isNewThreadUnsentRef = useRef(false);
 
   /**
    * The in-flight guard is a ref, not state, because two sends dispatched in the same tick would
@@ -130,6 +152,7 @@ export function useConversation(): Conversation {
   const messagesRef = useRef<Message[]>([]);
   const pendingTextRef = useRef<string | null>(null);
   const rafIdRef = useRef<number | null>(null);
+  const currentRunIdRef = useRef<string | null>(null);
 
   // Kept in step through an effect rather than assigned during render: the send handler and the
   // stall handler both need the latest log, and neither runs during render.
@@ -223,12 +246,25 @@ export function useConversation(): Conversation {
       rafIdRef.current = null;
     }
     pendingTextRef.current = null;
+    currentRunIdRef.current = null;
     inFlightRef.current = false;
     setInFlight(false);
     setStatus(next);
     setNotice(noticeText);
     abortRef.current = null;
     streamControllerRef.current = null;
+
+    setMessages((current) =>
+      current.filter(
+        (m) =>
+          !(
+            m.author === 'character' &&
+            m.status === 'streaming' &&
+            (!m.text || m.text.trim().length === 0) &&
+            (!m.toolCalls || m.toolCalls.length === 0)
+          ),
+      ),
+    );
   }, []);
 
   /** Mark the reply complete, hand the emotion across the seam, and announce it once. */
@@ -239,7 +275,7 @@ export function useConversation(): Conversation {
         return hasBubble
           ? current.map((message) =>
             message.id === replyId
-              ? { ...message, text, status: 'completed' }
+              ? { ...message, text, status: 'completed', interruptId: undefined }
               : message,
           )
           : [...current, { id: replyId, author: 'character', text, status: 'completed' }];
@@ -254,7 +290,7 @@ export function useConversation(): Conversation {
   );
 
   const send = useCallback(
-    (draft: string) => {
+    (draft: string, model?: string) => {
       if (!isSendable(draft)) return;
 
       const currentThreadId = threadIdRef.current;
@@ -273,6 +309,24 @@ export function useConversation(): Conversation {
       setInFlight(true);
 
       const text = draft.trim();
+
+      if (isNewThreadUnsentRef.current && currentThreadId) {
+        isNewThreadUnsentRef.current = false;
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('chat:new-conversation', {
+              detail: {
+                id: currentThreadId,
+                threadId: currentThreadId,
+                title: text.slice(0, 30) || 'New Conversation',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            })
+          );
+        }
+      }
+
       const visitorMessage: Message = {
         id: nextId('visitor'),
         author: 'visitor',
@@ -283,7 +337,18 @@ export function useConversation(): Conversation {
 
       // The visitor's message and the waiting state land in the same update as the send, before any
       // request is made, so the visible response to a send is immediate (FR-015, SC-004).
-      setMessages((current) => [...current, visitorMessage]);
+      // Also clean up any lingering empty/failed character messages from previous turns so they are not rendered.
+      setMessages((current) => {
+        const cleaned = current.filter(
+          (m) =>
+            !(
+              m.author === 'character' &&
+              (!m.text || m.text.trim().length === 0) &&
+              (!m.toolCalls || m.toolCalls.length === 0)
+            ),
+        );
+        return [...cleaned, visitorMessage];
+      });
       setStatus('waiting');
       setNotice(null);
 
@@ -292,12 +357,17 @@ export function useConversation(): Conversation {
 
       void (async () => {
         try {
-          const response = await sendMessage(currentThreadId, text, controller.signal);
+          const response = await sendMessage(currentThreadId, text, controller.signal, model);
 
           if (!response.ok || !response.body) {
             const mapped = noticeForStatus(response.status);
             finish(mapped.status, mapped.notice);
             return;
+          }
+
+          const headerRunId = response.headers.get('x-chat-run-id');
+          if (headerRunId) {
+            currentRunIdRef.current = headerRunId;
           }
 
           const reader = response.body.getReader();
@@ -306,6 +376,12 @@ export function useConversation(): Conversation {
 
           const streamController = createStreamController({
             requestId,
+            onStart: (event, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              if (event.run_id) {
+                currentRunIdRef.current = event.run_id;
+              }
+            },
             onStatus: (nextStatus, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
               if (nextStatus === 'streaming') {
@@ -401,6 +477,54 @@ export function useConversation(): Conversation {
               setEmotion(emotion);
               finish('error', errorMessage || copy.failedGeneric);
             },
+            onInterrupt: (interruptEvent, partialText, emotion, _metrics, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              pendingTextRef.current = null;
+
+              const promptVal = interruptEvent.value;
+              const interruptPrompt =
+                typeof promptVal === 'string'
+                  ? promptVal
+                  : typeof promptVal === 'object' && promptVal !== null
+                    ? (promptVal as Record<string, unknown>).message?.toString() ||
+                    (promptVal as Record<string, unknown>).question?.toString() ||
+                    JSON.stringify(promptVal)
+                    : '';
+
+              const displayText = partialText.trim().length > 0 ? partialText : interruptPrompt;
+
+              setMessages((current) => {
+                const hasBubble = current.some((message) => message.id === replyId);
+                return hasBubble
+                  ? current.map((message) =>
+                    message.id === replyId
+                      ? {
+                        ...message,
+                        text: displayText,
+                        status: 'interrupted',
+                        interruptId: interruptEvent.interrupt_id,
+                      }
+                      : message,
+                  )
+                  : [
+                    ...current,
+                    {
+                      id: replyId,
+                      author: 'character',
+                      text: displayText,
+                      status: 'interrupted',
+                      interruptId: interruptEvent.interrupt_id,
+                    },
+                  ];
+              });
+
+              setEmotion(emotion);
+              finish('idle', null);
+            },
             onInterrupted: (partialText, emotion, _metrics, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
               if (rafIdRef.current !== null) {
@@ -417,7 +541,22 @@ export function useConversation(): Conversation {
                 setEmotion(emotion);
                 finish('error', copy.failedStalled);
               } else {
-                setMessages((current) => current.filter((message) => message.id !== replyId));
+                let hadToolCalls = false;
+                setMessages((current) => {
+                  const target = current.find((message) => message.id === replyId);
+                  if (target?.toolCalls && target.toolCalls.length > 0) {
+                    hadToolCalls = true;
+                    return current.map((message) =>
+                      message.id === replyId ? { ...message, text: '', status: 'interrupted' } : message,
+                    );
+                  }
+                  return current.filter((message) => message.id !== replyId);
+                });
+                if (hadToolCalls) {
+                  setEmotion(emotion);
+                  finish('idle', null);
+                  return;
+                }
                 setEmotion(NEUTRAL);
                 finish('error', copy.failedEmpty);
               }
@@ -438,6 +577,22 @@ export function useConversation(): Conversation {
                   );
                   setEmotion(NEUTRAL);
                   finish('error', copy.failedStalled);
+                  return;
+                }
+                let hadToolCalls = false;
+                setMessages((current) => {
+                  const target = current.find((message) => message.id === replyId);
+                  if (target?.toolCalls && target.toolCalls.length > 0) {
+                    hadToolCalls = true;
+                    return current.map((message) =>
+                      message.id === replyId ? { ...message, text: '', status: 'interrupted' } : message,
+                    );
+                  }
+                  return current.filter((message) => message.id !== replyId);
+                });
+                if (hadToolCalls) {
+                  setEmotion(NEUTRAL);
+                  finish('idle', null);
                   return;
                 }
                 finish('error', copy.failedTimeout);
@@ -488,12 +643,425 @@ export function useConversation(): Conversation {
             return;
           }
 
+          setMessages((current) => {
+            const target = current.find((message) => message.id === replyId);
+            if (target && target.text && target.text.trim().length > 0) {
+              return current.map((message) =>
+                message.id === replyId ? { ...message, status: 'error' } : message,
+              );
+            }
+            if (target?.toolCalls && target.toolCalls.length > 0) {
+              return current.map((message) =>
+                message.id === replyId ? { ...message, status: 'error' } : message,
+              );
+            }
+            return current.filter((message) => message.id !== replyId);
+          });
+
           finish('error', copy.failedGeneric);
         }
       })();
     },
     [finish, completeReply],
   );
+
+  const resume = useCallback(
+    async (decision: 'yes' | 'no', interruptId?: string, targetMessageId?: string) => {
+      const currentThreadId = threadIdRef.current;
+      if (!currentThreadId) {
+        throw new Error('Thread unavailable');
+      }
+
+      inFlightRef.current = true;
+      setInFlight(true);
+      setStatus('streaming');
+      setNotice(null);
+
+      const targetMsg =
+        (targetMessageId && messagesRef.current.find((m) => m.id === targetMessageId)) ||
+        messagesRef.current.find((m) => m.status === 'interrupted');
+      const replyId = targetMsg?.id || nextId('character');
+      const effectiveInterruptId = interruptId || targetMsg?.interruptId;
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === replyId
+            ? { ...message, interruptDecision: decision }
+            : message,
+        ),
+      );
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const response = await resumeChat(currentThreadId, decision, effectiveInterruptId, controller.signal);
+
+        if (!response.ok || !response.body) {
+          const mapped = noticeForStatus(response.status);
+          finish(mapped.status, mapped.notice);
+          throw new Error(`Resume failed with status ${response.status}`);
+        }
+
+        const headerRunId = response.headers.get('x-chat-run-id');
+        if (headerRunId) {
+          currentRunIdRef.current = headerRunId;
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === replyId
+                ? { ...message, status: 'completed', interruptDecision: decision, interruptId: undefined }
+                : message,
+            ),
+          );
+          finish('idle', null);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const requestId = nextId('req');
+        currentRequestIdRef.current = requestId;
+
+        const streamController = createStreamController({
+          requestId,
+          initialToolCalls: targetMsg?.toolCalls,
+          onStart: (event, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            if (event.run_id) {
+              currentRunIdRef.current = event.run_id;
+            }
+          },
+          onStatus: (nextStatus, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            if (nextStatus === 'streaming') {
+              setStatus('streaming');
+            }
+          },
+          onText: (visible, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            setStatus('streaming');
+            pendingTextRef.current = visible;
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === replyId ? { ...message, text: visible, status: 'streaming' } : message,
+              ),
+            );
+          },
+          onComplete: (completedText, emotion, _metrics, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            pendingTextRef.current = null;
+            completeReply(replyId, completedText, emotion);
+          },
+          onError: (errorMessage, partialText, emotion, _metrics, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            pendingTextRef.current = null;
+            if (partialText.trim().length > 0) {
+              setMessages((current) =>
+                current.map((message) =>
+                  message.id === replyId ? { ...message, text: partialText, status: 'error' } : message,
+                ),
+              );
+            }
+            setEmotion(emotion);
+            finish('error', errorMessage || copy.failedGeneric);
+          },
+          onInterrupt: (interruptEvent, partialText, emotion, _metrics, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            pendingTextRef.current = null;
+            const promptVal = interruptEvent.value;
+            const interruptPrompt =
+              typeof promptVal === 'string'
+                ? promptVal
+                : typeof promptVal === 'object' && promptVal !== null
+                  ? (promptVal as Record<string, unknown>).message?.toString() ||
+                  (promptVal as Record<string, unknown>).question?.toString() ||
+                  JSON.stringify(promptVal)
+                  : '';
+            const displayText = partialText.trim().length > 0 ? partialText : interruptPrompt;
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === replyId
+                  ? {
+                    ...message,
+                    text: displayText,
+                    status: 'interrupted',
+                    interruptId: interruptEvent.interrupt_id,
+                  }
+                  : message,
+              ),
+            );
+            setEmotion(emotion);
+            finish('idle', null);
+          },
+          onInterrupted: (partialText, emotion, _metrics, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            pendingTextRef.current = null;
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === replyId
+                  ? { ...message, text: partialText || message.text, status: 'interrupted' }
+                  : message,
+              ),
+            );
+            setEmotion(emotion);
+            finish('idle', null);
+          },
+          onToolUpdate: (toolCalls, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === replyId ? { ...message, toolCalls } : message,
+              ),
+            );
+          },
+          onCancelled: (partialText, emotion, _metrics, reqId) => {
+            if (reqId && reqId !== currentRequestIdRef.current) return;
+            if (rafIdRef.current !== null) {
+              cancelAnimationFrame(rafIdRef.current);
+              rafIdRef.current = null;
+            }
+            pendingTextRef.current = null;
+            if (partialText.trim().length > 0) {
+              setMessages((current) =>
+                current.map((message) =>
+                  message.id === replyId ? { ...message, text: partialText, status: 'cancelled' } : message,
+                ),
+              );
+            }
+            setEmotion(emotion);
+            finish('idle', null);
+          },
+        });
+        streamControllerRef.current = streamController;
+
+        for (; ;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            streamController.processChunk(value);
+          }
+        }
+        streamController.end();
+      } catch (error) {
+        const aborted = error instanceof DOMException && error.name === 'AbortError';
+        if (aborted) {
+          inFlightRef.current = false;
+          return;
+        }
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === replyId
+              ? { ...message, status: 'interrupted', interruptDecision: undefined }
+              : message,
+          ),
+        );
+        finish('idle', null);
+        throw error;
+      }
+    },
+    [finish, completeReply],
+  );
+
+  const stop = useCallback(async () => {
+    const currentThreadId = threadIdRef.current;
+    const currentRunId = currentRunIdRef.current;
+
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    pendingTextRef.current = null;
+
+    // Abort the fetch connection
+    abortRef.current?.abort();
+
+    // Cancel the stream controller locally
+    streamControllerRef.current?.cancel('user_stopped');
+
+    // Ensure any streaming message is marked as cancelled
+    setMessages((current) =>
+      current.map((message) =>
+        message.status === 'streaming'
+          ? { ...message, status: 'cancelled' }
+          : message,
+      ),
+    );
+
+    finish('idle', null);
+
+    // Call POST /chat/stop on the server if thread exists (ignoring server error)
+    if (currentThreadId) {
+      try {
+        await stopChat(currentThreadId, currentRunId);
+      } catch {
+        // Ignore backend failure per spec edge case
+      }
+    }
+  }, [finish]);
+
+  const loadHistory = useCallback(async (targetThreadId: string) => {
+    if (!targetThreadId) return;
+
+    // Abort any ongoing streaming or connection
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    pendingTextRef.current = null;
+    abortRef.current?.abort();
+    streamControllerRef.current?.cancel('user_navigated');
+
+    activeHistoryThreadIdRef.current = targetThreadId;
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    setMessages([]);
+
+    try {
+      const historyItems = await fetchHistory(targetThreadId);
+
+      // Guard against race conditions if another thread was selected
+      if (activeHistoryThreadIdRef.current !== targetThreadId) {
+        return;
+      }
+
+      const mappedMessages: Message[] = historyItems.map((item) => {
+        let author: 'visitor' | 'character' = 'character';
+        if (item.author === 'visitor' || item.author === 'user') {
+          author = 'visitor';
+        }
+
+        let toolCalls = undefined;
+        if (item.toolCalls) {
+          if (typeof item.toolCalls === 'string') {
+            try {
+              const parsed = JSON.parse(item.toolCalls);
+              if (Array.isArray(parsed)) {
+                toolCalls = parsed;
+              }
+            } catch {
+              // Non-JSON string, leave undefined
+            }
+          } else if (Array.isArray(item.toolCalls)) {
+            toolCalls = item.toolCalls;
+          }
+        }
+
+        const validStatus: MessageStatus =
+          item.status === 'interrupted' ||
+          item.status === 'cancelled' ||
+          item.status === 'error' ||
+          item.status === 'streaming' ||
+          item.status === 'pending'
+            ? item.status
+            : 'completed';
+
+        return {
+          id: item.id || nextId(author),
+          author,
+          text: item.text || '',
+          status: validStatus,
+          toolCalls,
+          interruptId: item.interruptId || undefined,
+          interruptDecision:
+            item.interruptDecision === 'yes' || item.interruptDecision === 'no'
+              ? item.interruptDecision
+              : undefined,
+        };
+      });
+
+      setMessages(mappedMessages);
+      setThreadId(targetThreadId);
+      threadIdRef.current = targetThreadId;
+      isRestoredRef.current = true;
+      setStatus('idle');
+      inFlightRef.current = false;
+      setIsHistoryLoading(false);
+      setHistoryError(null);
+
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          sessionStorage.setItem(STORAGE_KEY_THREAD, targetThreadId);
+          sessionStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(mappedMessages));
+        }
+      } catch {
+        // Ignore sessionStorage access errors
+      }
+    } catch (err) {
+      if (activeHistoryThreadIdRef.current !== targetThreadId) {
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'Failed to load conversation history.';
+      setHistoryError(msg);
+      setIsHistoryLoading(false);
+    }
+  }, []);
+
+  const startNewChat = useCallback(async () => {
+    // Abort any ongoing streaming or connection
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    pendingTextRef.current = null;
+    abortRef.current?.abort();
+    streamControllerRef.current?.cancel('user_navigated');
+
+    activeHistoryThreadIdRef.current = null;
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    setMessages([]);
+    setThreadId(null);
+    threadIdRef.current = null;
+
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        sessionStorage.removeItem(STORAGE_KEY_THREAD);
+        sessionStorage.removeItem(STORAGE_KEY_MESSAGES);
+      }
+    } catch {
+      // Ignore
+    }
+
+    try {
+      const newId = await createThread();
+      threadIdRef.current = newId;
+      setThreadId(newId);
+      isNewThreadUnsentRef.current = true;
+      isRestoredRef.current = true;
+      setStatus('idle');
+      inFlightRef.current = false;
+      setIsHistoryLoading(false);
+      setHistoryError(null);
+
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          sessionStorage.setItem(STORAGE_KEY_THREAD, newId);
+        }
+      } catch {
+        // Ignore
+      }
+      return newId;
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Failed to initialize new conversation. Please try again.';
+      setHistoryError(msg);
+      setIsHistoryLoading(false);
+      return null;
+    }
+  }, []);
+
+  const retryHistory = useCallback(async () => {
+    if (activeHistoryThreadIdRef.current) {
+      await loadHistory(activeHistoryThreadIdRef.current);
+    } else {
+      await startNewChat();
+    }
+  }, [loadHistory, startNewChat]);
 
   return {
     messages,
@@ -504,5 +1072,12 @@ export function useConversation(): Conversation {
     notice,
     announcement,
     send,
+    resume,
+    stop,
+    isHistoryLoading,
+    historyError,
+    loadHistory,
+    retryHistory,
+    startNewChat,
   };
 }

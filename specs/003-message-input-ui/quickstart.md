@@ -1,38 +1,49 @@
-# Quickstart & Validation Guide: message-input-ui
+# Validation & Quickstart: message-input-ui
 
-## Validation Scenarios
+This guide describes how to validate the interactive message input and new chat functionality manually or via tests.
 
-This guide details how to validate the message input UI redesign manually.
+## Prerequisites
 
-### Prerequisites
-1. Start the development server: `npm run dev`
-2. Open the application in a modern web browser.
+- Next.js development server running (`npm run dev`)
+- Backend API server running (or API routes mocked via msw/interceptors)
+- Playwright installed for E2E tests (`npx playwright install`)
 
-### 1. Initialization and Loading State Validation
-- **Action**: Reload the application page.
-- **Expected**: A full white page with a centered loader (`public/assets/loader.gif`) appears.
-- **Action**: Simulate successful backend connection and threadId generation.
-- **Expected**: The white loading page smoothly fades out, and the chatbot UI fades in.
-- **Action**: Simulate a failure or wait for 30 seconds.
-- **Expected**: An error message and "Retry" button appear on the white loading page.
+## Scenario 1: Morphing Animation Validation
 
-### 2. Single-Line Pill Validation
-- **Action**: Look at the input box when empty.
-- **Expected**: It should appear as a single-line, pill-shaped dark container with all icons (Attachment, Model Selector, Voice, Send) horizontally inline.
+**Steps:**
+1. Open the application in a web browser.
+2. Locate the single-line, pill-shaped message input at the bottom of the screen.
+3. Type a long string of text exceeding 36 characters OR press `Shift+Enter` to insert a newline.
+4. **Observe:** The input container morphs smoothly into a multi-line rectangular card. The controls (Attachment, Model Selector, Send) rearrange to the bottom footer.
+5. Delete the text.
+6. **Observe:** The input reverts to the single-line pill layout.
 
-### 3. Auto-Expansion and Layout Morphing Validation
-- **Action**: Type a long sentence that exceeds the width of the input, or press `Shift+Enter`.
-- **Expected**: The pill container should smoothly morph into a rounded rectangular card.
-- **Expected**: The Attachment icon should drop to the bottom-left. The Model Selector, Voice, and Send icons should drop to the bottom-right.
-- **Expected**: The caret should remain focused and not jump to the beginning of the text.
+## Scenario 2: New Chat Flow
 
-### 4. Maximum Height Validation
-- **Action**: Continue pressing `Shift+Enter` until you have 6 or 7 lines of text.
-- **Expected**: The container should stop growing vertically after exactly 5 lines of text.
-- **Expected**: An inner scrollbar should appear within the text area.
+**Steps:**
+1. Click the "New Chat" button in the sidebar.
+2. **Observe:** The main chat area clears instantly and displays a loading skeleton.
+3. **Observe:** Network tab shows a `POST /threads` request.
+4. Wait for the new thread ID to return.
+5. Type and send a message.
+6. **Observe:** The new conversation appears at the top of the sidebar.
 
-### 5. Submission Validation
-- **Action**: Press the `Enter` key.
-- **Expected**: The message is submitted.
-- **Expected**: The text area is cleared, but remains enabled.
-- **Expected**: The Send button immediately becomes disabled indicating the loading state.
+## Scenario 3: AI Stream Cancellation
+
+**Steps:**
+1. Type a message and hit `Enter`.
+2. While the AI is streaming the response, the Send button becomes a Stop button (square icon).
+3. Click the Stop button OR press `Escape`.
+4. **Observe:** The stream stops immediately, a `POST /chat/stop` request is fired, and "(Stopped)" is appended to the message.
+
+## Automated Validation
+
+Run the component and E2E tests to validate these scenarios automatically:
+
+```bash
+# Run component tests for the morphing logic
+npm run test ChatInput.test.tsx
+
+# Run E2E tests for the chat and sidebar flows
+npx playwright test e2e/message-input.spec.ts
+```

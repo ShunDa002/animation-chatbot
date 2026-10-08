@@ -187,7 +187,7 @@ app/
 components/
 ├── CharacterStage.tsx          # Client-only wrapper; owns mount/destroy of the renderer
 ├── StillCharacter.tsx          # Fallback still image (FR-012)
-├── ChatPanel.tsx               # Composes log + input + status + thinking indicator
+├── ChatPanel.tsx               # Composes log + input + thinking indicator
 ├── MessageLog.tsx              # Scrolling log, newest in view, character icon on character msgs (FR-002)
 ├── MessageInput.tsx            # 300-char cap, remaining count, send control (FR-022)
 └── Announcer.tsx               # Polite live region (FR-036, FR-037)
@@ -231,7 +231,7 @@ The `lib/server/` directory and `app/api/chat/route.ts` have been removed (D15).
 concerns — provider credentials, persona instructions, rate limiting, request validation, and
 conversation context — are the responsibility of the separate FastAPI backend project.
 
-**Layout Decision** (D14, D16): The page uses a full-screen character display with a collapsible sidebar on the left for navigation and history (mocked with dummy data). The chat panel overlays the bottom 50% of the character area with a top-to-bottom transparent-to-dark gradient (`bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)]`) without heavy backdrop blur or top borders (D16, FR-001). This keeps the character's face, neck, and upper torso brightly lit and visible, while leaving the dark clothing, torso, and seated posture sharply discernible behind the chat overlay. Dialogue and input text use pure white (`text-white`) with subtle drop shadows against translucent bubble containers for maximum contrast without obscuring the artwork (FR-002). The thinking indicator is displayed as a temporary message bubble inside the chat panel (FR-040). On mobile viewports (< 640px), the sidebar becomes an off-canvas drawer accessed via a menu button, while the chat overlay remains at the bottom 50% (FR-003).
+**Layout Decision** (D14, D16): The page uses a full-screen character display with a collapsible sidebar on the left for navigation and history (mocked with dummy data). The chat panel overlays the bottom 50% of the character area with a top-to-bottom transparent-to-dark gradient (`bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)]`) without heavy backdrop blur or top borders (D16, FR-001). This keeps the character's face, neck, and upper torso brightly lit and visible, while leaving the dark clothing, torso, and seated posture sharply discernible behind the chat overlay. Dialogue and input text use pure white (`text-white`) with subtle drop shadows against translucent bubble containers for maximum contrast without obscuring the artwork (FR-002). The thinking indicator is displayed inside the empty message bubble inside the chat panel (FR-040). On mobile viewports (< 640px), the sidebar becomes an off-canvas drawer accessed via a menu button, while the chat overlay remains at the bottom 50% (FR-003).
 
 ## Complexity Tracking
 

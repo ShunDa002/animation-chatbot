@@ -54,8 +54,6 @@ export const copy = {
   /** Shown when thread creation fails on load (FR-045). Visitor reloads to reconnect. */
   backendUnavailable: 'Could not connect to the backend. Please reload the page to try again.',
 
-  /** Rig attribution, required by the sample model's license (research D4). */
-  attributionPrefix: 'Character model:',
 } as const;
 
 export type CopyKey = keyof typeof copy;

@@ -221,13 +221,66 @@ const server = createServer((req, res) => {
     return;
   }
 
+async function handleResume(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let raw = '';
+  try {
+    raw = await readBody(req);
+  } catch {
+    text(res, 400, 'Invalid resume request.');
+    return;
+  }
+
+  let parsed: { thread_id?: unknown; resume?: unknown; interrupt_id?: unknown };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    text(res, 400, 'Invalid resume request.');
+    return;
+  }
+
+  json(res, 200, { ok: true, status: 'resumed', decision: parsed.resume });
+}
+
+async function handleStop(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let raw = '';
+  try {
+    raw = await readBody(req);
+  } catch {
+    text(res, 400, 'Invalid stop request.');
+    return;
+  }
+
+  let parsed: { thread_id?: unknown; run_id?: unknown };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    text(res, 400, 'Invalid stop request.');
+    return;
+  }
+
+  json(res, 200, { ok: true, status: 'stopped', thread_id: parsed?.thread_id, run_id: parsed?.run_id });
+}
+
   if (segments[0] === 'threads') {
     void handleThreads(req, res);
     return;
   }
 
   if (segments[0] === 'chat') {
+    if (segments[1] === 'resume') {
+      void handleResume(req, res);
+      return;
+    }
+    if (segments[1] === 'stop') {
+      void handleStop(req, res);
+      return;
+    }
     void handleChat(req, res);
+    return;
+  }
+
+  if (segments[0] === 'models') {
+    json(res, 200, ['model-standard', 'model-fast', 'model-pro']);
     return;
   }
 

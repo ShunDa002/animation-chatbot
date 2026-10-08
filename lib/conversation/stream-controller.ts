@@ -12,7 +12,9 @@ import type {
   DoneEvent,
   ErrorEvent,
   HeartbeatEvent,
+  InterruptEvent,
   StartEvent,
+  StoppedEvent,
   StreamMetrics,
   StreamOutcome,
   TokenEvent,
@@ -26,12 +28,16 @@ import type { MessageStatus } from './limits';
 export interface StreamControllerOptions {
   requestId?: string;
   stallTimeoutMs?: number;
+  initialToolCalls?: ToolCallRecord[];
+  onStart?: (event: StartEvent, requestId?: string) => void;
   onStatus?: (status: MessageStatus, requestId?: string) => void;
   onText?: (visibleText: string, requestId?: string) => void;
   onComplete?: (text: string, emotion: Emotion, metrics: StreamMetrics, requestId?: string) => void;
   onError?: (message: string, partialText: string, emotion: Emotion, metrics: StreamMetrics, requestId?: string) => void;
+  onInterrupt?: (event: InterruptEvent, partialText: string, emotion: Emotion, metrics: StreamMetrics, requestId?: string) => void;
   onInterrupted?: (partialText: string, emotion: Emotion, metrics: StreamMetrics, requestId?: string) => void;
   onCancelled?: (partialText: string, emotion: Emotion, metrics: StreamMetrics, requestId?: string) => void;
+  onStopped?: (event?: StoppedEvent, partialText?: string, emotion?: Emotion, metrics?: StreamMetrics, requestId?: string) => void;
   onToolUpdate?: (toolCalls: ToolCallRecord[], requestId?: string) => void;
   onMetrics?: (metrics: StreamMetrics, requestId?: string) => void;
 }
@@ -50,10 +56,16 @@ export function createStreamController(options: StreamControllerOptions): Stream
   const decoder = new TextDecoder('utf-8');
   const cueReader: CueReader = createCueReader();
   const toolCalls = new Map<string, ToolCallRecord>();
+  if (options.initialToolCalls) {
+    for (const tc of options.initialToolCalls) {
+      toolCalls.set(tc.toolCallId || tc.id, { ...tc });
+    }
+  }
 
   let started = false;
   let terminated = false;
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  let latestInterrupt: InterruptEvent | null = null;
 
   const sendTime = performance.now();
   let firstTokenTime: number | null = null;
@@ -95,6 +107,7 @@ export function createStreamController(options: StreamControllerOptions): Stream
       countEvent('start');
       started = true;
       options.onStatus?.('streaming', requestId);
+      options.onStart?.(event, requestId);
     },
 
     onToken(event: TokenEvent): void {
@@ -280,6 +293,19 @@ export function createStreamController(options: StreamControllerOptions): Stream
       options.onComplete?.(result.text, result.emotion, metrics, requestId);
     },
 
+    onStopped(event?: StoppedEvent): void {
+      countEvent('stopped');
+      terminated = true;
+      clearStallTimer();
+      const result = cueReader.end();
+      const metrics = finalizeMetrics('cancelled');
+      if (options.onStopped) {
+        options.onStopped(event, result.text, result.emotion, metrics, requestId);
+      } else {
+        options.onCancelled?.(result.text, result.emotion, metrics, requestId);
+      }
+    },
+
     onError(event: ErrorEvent): void {
       countEvent('error');
       terminated = true;
@@ -292,6 +318,12 @@ export function createStreamController(options: StreamControllerOptions): Stream
     onHeartbeat(event?: HeartbeatEvent): void {
       countEvent('heartbeat');
       // Stall timer is refreshed in processChunk
+    },
+
+    onInterrupt(event: InterruptEvent): void {
+      countEvent('interrupt');
+      latestInterrupt = event;
+      clearStallTimer();
     },
 
     onUnknown(event: unknown): void {
@@ -339,7 +371,11 @@ export function createStreamController(options: StreamControllerOptions): Stream
         terminated = true;
         const result = cueReader.end();
         const metrics = finalizeMetrics('interrupted');
-        options.onInterrupted?.(result.text, result.emotion, metrics, requestId);
+        if (latestInterrupt && options.onInterrupt) {
+          options.onInterrupt(latestInterrupt, result.text, result.emotion, metrics, requestId);
+        } else {
+          options.onInterrupted?.(result.text, result.emotion, metrics, requestId);
+        }
       }
     },
 

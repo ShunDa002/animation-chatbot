@@ -14,6 +14,8 @@ export interface BaseEvent {
 export interface StartEvent {
   type: 'start';
   thread_id: string;
+  run_id?: string;
+  operation?: 'invoke' | 'resume' | string;
 }
 
 export interface TokenEvent {
@@ -40,13 +42,34 @@ export interface ToolResultEvent {
   node?: string | null;
 }
 
+export interface InterruptEvent {
+  type: 'interrupt';
+  thread_id: string;
+  interrupt_id: string;
+  value?: unknown;
+  resumable?: boolean;
+}
+
 export interface DoneEvent {
   type: 'done';
+  thread_id?: string;
+  run_id?: string;
+  operation?: string;
+}
+
+export interface StoppedEvent {
+  type: 'stopped';
+  thread_id?: string;
+  run_id?: string;
+  operation?: string;
 }
 
 export interface ErrorEvent {
   type: 'error';
   message: string;
+  thread_id?: string;
+  run_id?: string;
+  operation?: string;
 }
 
 export interface HeartbeatEvent {
@@ -58,7 +81,9 @@ export type StreamWireEvent =
   | TokenEvent
   | ToolCallDeltaEvent
   | ToolResultEvent
+  | InterruptEvent
   | DoneEvent
+  | StoppedEvent
   | ErrorEvent
   | HeartbeatEvent;
 
@@ -109,7 +134,9 @@ export interface StreamEventHandlers {
   onToken(event: TokenEvent): void;
   onToolCallDelta(event: ToolCallDeltaEvent): void;
   onToolResult(event: ToolResultEvent): void;
+  onInterrupt?(event: InterruptEvent): void;
   onDone(event?: DoneEvent): void;
+  onStopped?(event?: StoppedEvent): void;
   onError(event: ErrorEvent): void;
   onHeartbeat(event?: HeartbeatEvent): void;
   onUnknown(event: unknown): void;

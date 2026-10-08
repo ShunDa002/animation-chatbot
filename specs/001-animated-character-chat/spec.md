@@ -44,8 +44,9 @@ nothing else — that is the entire vocabulary between them, so either side is r
 - Q: On mobile viewports (< 640px), how should the layout adapt given the new sidebar and overlay structure? → A: The sidebar is hidden in an off-canvas drawer (accessed via a hamburger menu), and the chat overlay covers the bottom 50% of the screen.
 - Q: Rather than a uniform overlay, how should the bottom 50% chat overlay transition over the character? → A: Replace uniform background with a top-to-bottom gradient (`bg-gradient-to-b from-transparent via-[rgba(28,30,39,0.8)] to-[rgba(28,30,39,0.95)]`) without heavy backdrop blurring (`backdrop-blur-md`) or top borders, keeping the character's face, neck, and upper torso brightly lit and visible, and deepening darkness only in the lower section behind dialogue and UI controls.
 - Q: How should text readability be ensured against the character background artwork? → A: Primary dialogue and input text MUST be pure white (`text-white`) with subtle text shadow (`drop-shadow-md` and text shadow) to contrast directly against the background artwork and prevent washing out if the character behind the panel has bright clothing or accessories; message bubbles should feature translucent backgrounds so the character silhouette remains discernible behind the text while distinguishing speakers.
-- Q: The speech bubble is being removed from the UI. Where should the typing/thinking indicator be displayed while the character is preparing a reply? → A: Display it as a temporary message bubble inside the chat panel.
+- Q: The speech bubble is being removed from the UI. Where should the typing/thinking indicator be displayed while the character is preparing a reply? → A: Display it inside the AI's empty message bubble in the message log.
 - Q: Should the speech bubble and its relevant components be completely removed from the current UI? → A: Yes, remove the speech bubble entirely and only display the conversation messages inside the chat panel.
+- Q: Where should connection notices and error messages be displayed? → A: Inside the message bubble in red, instead of a separate status line.
 
 ### Session 2026-08-31
 
@@ -90,7 +91,7 @@ nothing else — that is the entire vocabulary between them, so either side is r
   separate projects; this project is frontend-only, and the backend is a separate FastAPI application.
 - Q: When thread creation fails on page load (backend unreachable, network error, non-200 response),
   should the chat panel be disabled or should the visitor discover the error only when trying to
-  send? → A: Disable sending and show a connection notice in the chat panel until thread creation
+  send? → A: Disable sending and show a connection notice as an error message bubble in the chat panel until thread creation
   succeeds.
 - Q: How does the FastAPI backend stream the reply — plain text chunks, Server-Sent Events, or
   newline-delimited JSON? → A: Plain text streaming. The backend streams raw text chunks containing
@@ -208,8 +209,8 @@ a distinct, visibly different state during the wait and leaves it when text begi
 **Acceptance Scenarios**:
 
 1. **Given** the visitor has just sent a message, **When** no reply text has arrived yet, **Then**
-   the character is in a visibly distinct thinking state and a waiting indicator is present in the
-   chat panel.
+   the character is in a visibly distinct thinking state and a waiting indicator is present inside the
+   empty message bubble in the chat panel.
 2. **Given** the character is in the thinking state, **When** the first reply text arrives, **Then**
    the thinking state ends.
 3. **Given** a reply takes an unusually long time, **When** the visitor waits, **Then** the thinking
@@ -288,8 +289,8 @@ a distinct, visibly different state during the wait and leaves it when text begi
   current emotional state in plain words, updated whenever the emotional state changes, so the
   character's reaction is available to a visitor who cannot see the character display.
 - **FR-040**: While the character is in the thinking state (FR-010), a typing/thinking indicator MUST
-  be displayed as a temporary message bubble inside the chat panel. The indicator MUST be replaced by
-  the actual reply message bubble once streaming begins and MUST respect the reduced-motion preference (FR-014).
+  be displayed inside an empty message bubble inside the chat panel. The indicator MUST be replaced by
+  the actual reply text once streaming begins and MUST respect the reduced-motion preference (FR-014).
 - **FR-004**: Every visitor-facing message — errors, limits, waiting states — MUST be plain language
   the visitor can act on, and MUST NOT expose provider names, error codes, or diagnostic text.
 
@@ -349,7 +350,7 @@ a distinct, visibly different state during the wait and leaves it when text begi
   request to the backend threads endpoint. The returned UUID MUST be stored in component state and
   included with every subsequent chat message for the duration of the visit.
 - **FR-045**: If thread creation fails (network error, backend unreachable, or non-200 response),
-  sending MUST be disabled and a plain-language connection notice MUST be shown in the chat panel
+  sending MUST be disabled and a plain-language connection notice MUST be shown as a red message bubble in the chat panel
   until thread creation succeeds. The character and its idle animation remain unaffected.
 - **FR-046**: The backend chat endpoint streams its reply as plain text chunks (not SSE or structured
   JSON). The frontend MUST read the response body as a byte stream and decode it as UTF-8 text,

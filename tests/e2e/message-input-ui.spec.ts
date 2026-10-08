@@ -169,4 +169,71 @@ test.describe('Message Input UI Redesign (quickstart.md & 60fps performance vali
     const sendBox = (await sendButton.boundingBox())!;
     expect(sendBox.y + sendBox.height).toBeLessThan(viewport.height);
   });
+
+  test('Scenario 6: HITL Interrupt Validation (quickstart.md)', async ({ page }) => {
+    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const sendButton = page.getByRole('button', { name: /Send/i });
+
+    // 1. Send message configured to interrupt mid-stream
+    await textarea.fill('#die-midstream Buy 10 shares of META');
+    await sendButton.click();
+
+    // 2. Wait for stream to interrupt and confirmation card to appear
+    const card = page.getByRole('region', { name: /confirmation/i });
+    await expect(card).toBeVisible({ timeout: 15000 });
+
+    // 3. Main input is disabled during HITL interrupt
+    await expect(textarea).toBeDisabled();
+
+    // 4. Interactive confirmation card has Yes and No buttons
+    const yesButton = card.getByRole('button', { name: 'Yes' });
+    const noButton = card.getByRole('button', { name: 'No' });
+    await expect(yesButton).toBeVisible();
+    await expect(noButton).toBeVisible();
+
+    // 5. Network failure simulation: error message appears inline and buttons remain enabled
+    await page.route('**/chat/resume', async (route) => {
+      await route.fulfill({
+        status: 500,
+        body: 'Internal Server Error',
+      });
+    });
+
+    await yesButton.click();
+    await expect(card.getByRole('alert')).toBeVisible();
+    await expect(yesButton).toBeEnabled();
+    await expect(noButton).toBeEnabled();
+
+    // 6. Successful retry: remove failure route, click Yes, buttons replaced with text summary "Approved"
+    await page.unroute('**/chat/resume');
+    await yesButton.click();
+    await expect(card.getByText('Approved')).toBeVisible();
+    await expect(yesButton).not.toBeVisible();
+    await expect(noButton).not.toBeVisible();
+  });
+
+  test('Scenario 7: Stop Generation Validation (US6)', async ({ page }) => {
+    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const sendButton = page.getByRole('button', { name: /Send/i });
+
+    // 1. Send message configured to stream and stall mid-stream
+    await textarea.fill('#stall-midstream Tell me a story');
+    await sendButton.click();
+
+    // 2. Verify Stop button appears during streaming
+    const stopButton = page.getByRole('button', { name: /Stop generating/i });
+    await expect(stopButton).toBeVisible({ timeout: 10000 });
+
+    // 3. Click Stop button
+    await stopButton.click();
+
+    // 4. Verify subtle (Stopped) indicator is rendered on the assistant message
+    await expect(page.getByTestId('stopped-indicator')).toBeVisible();
+
+    // 5. Verify Send button is restored and textarea enabled
+    await expect(page.getByRole('button', { name: /Send/i })).toBeVisible();
+    await expect(textarea).toBeEnabled();
+  });
 });
+
+

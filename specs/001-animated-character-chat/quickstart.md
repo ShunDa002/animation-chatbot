@@ -200,6 +200,6 @@ counts flat, no growth in reply-handling latency, animation still smooth.
 - [ ] `NEXT_PUBLIC_BACKEND_URL` set correctly for the production backend
 - [ ] External FastAPI backend deployed and accessible from the frontend's domain
 - [ ] CORS configured on the backend to allow the frontend's origin
-- [ ] Rig license file vendored and attribution visible on the page
+- [ ] Rig license file vendored
 - [ ] `npm run build`, `npm run lint`, `npm test`, `npm run test:e2e` all green
 - [ ] 60fps measurement recorded on the baseline device and attached to the PR (constitution IV)

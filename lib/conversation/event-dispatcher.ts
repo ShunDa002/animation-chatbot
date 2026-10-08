@@ -9,12 +9,15 @@ import type {
   DoneEvent,
   ErrorEvent,
   HeartbeatEvent,
+  InterruptEvent,
   StartEvent,
+  StoppedEvent,
   StreamEventHandlers,
   TokenEvent,
   ToolCallDeltaEvent,
   ToolResultEvent,
 } from './stream-types';
+
 
 export interface EventDispatcher {
   dispatch(event: unknown): void;
@@ -91,6 +94,12 @@ export function createEventDispatcher(handlers: StreamEventHandlers): EventDispa
           break;
         }
 
+        case 'stopped': {
+          terminated = true;
+          invoke(() => handlers.onStopped?.(raw as unknown as StoppedEvent));
+          break;
+        }
+
         case 'error': {
           if (typeof raw.message !== 'string') {
             console.warn('Event dispatcher: error event missing string message', raw);
@@ -103,6 +112,15 @@ export function createEventDispatcher(handlers: StreamEventHandlers): EventDispa
 
         case 'heartbeat': {
           invoke(() => handlers.onHeartbeat(raw as unknown as HeartbeatEvent));
+          break;
+        }
+
+        case 'interrupt': {
+          if (typeof raw.thread_id !== 'string' || typeof raw.interrupt_id !== 'string') {
+            console.warn('Event dispatcher: interrupt event missing string thread_id or interrupt_id', raw);
+            return;
+          }
+          invoke(() => handlers.onInterrupt?.(raw as unknown as InterruptEvent));
           break;
         }
 

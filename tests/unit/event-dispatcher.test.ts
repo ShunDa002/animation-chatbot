@@ -8,6 +8,7 @@ function createMockHandlers(overrides: Partial<StreamEventHandlers> = {}): Strea
     onToken: vi.fn(),
     onToolCallDelta: vi.fn(),
     onToolResult: vi.fn(),
+    onInterrupt: vi.fn(),
     onDone: vi.fn(),
     onError: vi.fn(),
     onHeartbeat: vi.fn(),
@@ -32,6 +33,21 @@ describe('Event dispatcher', () => {
 
     dispatcher.dispatch({ type: 'tool_result', content: 'ok', tool_call_id: 'call_1' });
     expect(handlers.onToolResult).toHaveBeenCalledWith({ type: 'tool_result', content: 'ok', tool_call_id: 'call_1' });
+
+    dispatcher.dispatch({
+      type: 'interrupt',
+      thread_id: 'th-123',
+      interrupt_id: 'int-456',
+      value: 'Approve?',
+      resumable: true,
+    });
+    expect(handlers.onInterrupt).toHaveBeenCalledWith({
+      type: 'interrupt',
+      thread_id: 'th-123',
+      interrupt_id: 'int-456',
+      value: 'Approve?',
+      resumable: true,
+    });
 
     dispatcher.dispatch({ type: 'heartbeat' });
     expect(handlers.onHeartbeat).toHaveBeenCalled();
