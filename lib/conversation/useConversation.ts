@@ -2,51 +2,51 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NEUTRAL, type Emotion } from '@/lib/emotion';
-import { isSendable, type Message, type MessageStatus } from '@/lib/conversation/limits';
-import { createStreamController, type StreamController } from '@/lib/conversation/stream-controller';
-import { createThread, sendMessage, resumeChat, stopChat, fetchConversations, type ConversationSummary, fetchHistory, type HistoryMessageItem } from '@/lib/conversation/backend';
+import {
+  isSendable,
+  type InterruptDecision,
+  type Message,
+  type MessageStatus,
+} from '@/lib/conversation/limits';
+import type { ConversationStatus } from '@/lib/conversation/types';
+import {
+  createStreamController,
+  type StreamController,
+} from '@/lib/conversation/stream-controller';
+import {
+  createThread,
+  sendMessage,
+  resumeChat,
+  stopChat,
+  fetchConversations,
+  type ConversationSummary,
+  fetchHistory,
+  type HistoryMessageItem,
+} from '@/lib/conversation/backend';
 import { copy } from '@/lib/ui/copy';
 
-export { fetchConversations, type ConversationSummary, fetchHistory, type HistoryMessageItem };
-
-/**
- * The conversation layer. Knows nothing about rendering.
- *
- * It imports lib/emotion.ts and lib/ui/*, and nothing from lib/character/**. It does not know
- * whether a canvas, a still image, or nothing at all is on the other side of the seam - it hands
- * over one Emotion and one thinking flag, and never learns what happened to them
- * (contracts/emotion-seam.md).
- *
- * Everything here lives in memory for the length of one visit. Nothing is written to any persistent
- * store on the device or the server (FR-024).
- */
-
-export type ConversationStatus =
-  | 'connecting'
-  | 'idle'
-  | 'waiting'
-  | 'streaming'
-  | 'error'
-  | 'limited';
+export {
+  fetchConversations,
+  type ConversationSummary,
+  fetchHistory,
+  type HistoryMessageItem,
+};
+export type { ConversationStatus } from '@/lib/conversation/types';
 
 export interface Conversation {
   messages: Message[];
   status: ConversationStatus;
-  /** UUID assigned by POST /threads on page load (FR-043). Null until thread is ready. */
   threadId: string | null;
-  /** The last value handed across the seam. */
   emotion: Emotion;
-  /** True from send until the reply completes, fails, or times out (FR-021). */
   inFlight: boolean;
-  /** Visitor-facing reason the panel and the live region both show (FR-004, FR-037). */
   notice: string | null;
-  /**
-   * The completed reply, for the one-shot announcement (FR-036). Announcer derives its message
-   * from this rather than being handed it, so nothing needs clearing and no announcement is lost.
-   */
   announcement: string | null;
   send(draft: string, model?: string): void;
-  resume(decision: 'yes' | 'no', interruptId?: string, targetMessageId?: string): Promise<void>;
+  resume(
+    decision: InterruptDecision,
+    interruptId?: string,
+    targetMessageId?: string,
+  ): Promise<void>;
   stop: () => Promise<void>;
   isHistoryLoading?: boolean;
   historyError?: string | null;
@@ -61,8 +61,10 @@ function nextId(prefix: string): string {
   return `${prefix}-${Date.now()}-${sequence}`;
 }
 
-/** Which visitor-facing sentence a failed response maps to. The body is never displayed (FR-030). */
-function noticeForStatus(status: number): { notice: string; status: ConversationStatus } {
+function noticeForStatus(status: number): {
+  notice: string;
+  status: ConversationStatus;
+} {
   if (status === 429) return { notice: copy.limited, status: 'limited' };
   if (status === 504) return { notice: copy.failedTimeout, status: 'error' };
   if (status === 400) return { notice: copy.failedSend, status: 'error' };
@@ -93,9 +95,7 @@ function getInitialSession(): {
               messages = parsed
                 .map((m: Message) => {
                   let id = m.id;
-                  if (!id || seenIds.has(id)) {
-                    id = nextId(m.author || 'msg');
-                  }
+                  if (!id || seenIds.has(id)) id = nextId(m.author || 'msg');
                   seenIds.add(id);
                   if (
                     m.author === 'character' &&
@@ -112,14 +112,14 @@ function getInitialSession(): {
                 .filter((m): m is Message => m !== null);
             }
           } catch {
-            // Ignore parse errors
+            // Ignore malformed session data.
           }
         }
         return { messages, threadId: storedThread, status: 'idle', isRestored: true };
       }
     }
   } catch {
-    // Ignore sessionStorage access errors
+    // Ignore sessionStorage access errors.
   }
   return { messages: [], threadId: null, status: 'connecting', isRestored: false };
 }
@@ -134,16 +134,10 @@ export function useConversation(): Conversation {
   const [emotion, setEmotion] = useState<Emotion>(NEUTRAL);
   const [notice, setNotice] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
-  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const activeHistoryThreadIdRef = useRef<string | null>(null);
   const isNewThreadUnsentRef = useRef(false);
-
-  /**
-   * The in-flight guard is a ref, not state, because two sends dispatched in the same tick would
-   * both read the same stale state value and both proceed. FR-021 allows exactly one turn in
-   * flight, and "exactly one" has to hold against a double-click, not just against a slow user.
-   */
   const inFlightRef = useRef(false);
   const [inFlight, setInFlight] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -154,24 +148,14 @@ export function useConversation(): Conversation {
   const rafIdRef = useRef<number | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
 
-  // Kept in step through an effect rather than assigned during render: the send handler and the
-  // stall handler both need the latest log, and neither runs during render.
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
-  // Request or restore a thread on mount (FR-043, FR-024).
-  // Checks sessionStorage first so conversations persist across page reloads.
-  // If thread creation fails, set status to 'error', show backendUnavailable notice,
-  // and leave threadId as null (FR-045).
   useEffect(() => {
     let cancelled = false;
+    if (threadIdRef.current) return;
 
-    if (threadIdRef.current) {
-      return;
-    }
-
-    // If threadId is absent, call createThread() and store the new UUID
     void (async () => {
       try {
         const id = await createThread();
@@ -181,12 +165,8 @@ export function useConversation(): Conversation {
           setStatus('idle');
           isRestoredRef.current = true;
           try {
-            if (typeof window !== 'undefined' && window.sessionStorage) {
-              sessionStorage.setItem(STORAGE_KEY_THREAD, id);
-            }
-          } catch {
-            // Ignore sessionStorage access errors
-          }
+            sessionStorage.setItem(STORAGE_KEY_THREAD, id);
+          } catch { }
         }
       } catch {
         if (!cancelled) {
@@ -204,40 +184,24 @@ export function useConversation(): Conversation {
     };
   }, []);
 
-  // 3. Whenever messages or threadId change, sync them to sessionStorage (FR-024)
   useEffect(() => {
     if (!isRestoredRef.current || !threadId) return;
     try {
-      if (typeof window !== 'undefined' && window.sessionStorage) {
-        sessionStorage.setItem(STORAGE_KEY_THREAD, threadId);
-      }
-    } catch {
-      // Ignore sessionStorage quota or access errors
-    }
+      sessionStorage.setItem(STORAGE_KEY_THREAD, threadId);
+    } catch { }
   }, [threadId]);
 
   useEffect(() => {
     if (!isRestoredRef.current || !threadId) return;
     try {
-      if (typeof window !== 'undefined' && window.sessionStorage) {
-        sessionStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(messages));
-      }
-    } catch {
-      // Ignore sessionStorage quota or access errors
-    }
+      sessionStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(messages));
+    } catch { }
   }, [messages, threadId]);
 
-  // A visitor who navigates away or reloads mid-reply abandons the request cleanly, so no further
-  // work is charged to the demo's allowance (spec Edge Cases).
-  useEffect(() => {
-    return () => {
-      if (rafIdRef.current !== null) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-      streamControllerRef.current?.cancel();
-      abortRef.current?.abort();
-    };
+  useEffect(() => () => {
+    if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+    streamControllerRef.current?.cancel();
+    abortRef.current?.abort();
   }, []);
 
   const finish = useCallback((next: ConversationStatus, noticeText: string | null) => {
@@ -253,7 +217,6 @@ export function useConversation(): Conversation {
     setNotice(noticeText);
     abortRef.current = null;
     streamControllerRef.current = null;
-
     setMessages((current) =>
       current.filter(
         (m) =>
@@ -267,9 +230,8 @@ export function useConversation(): Conversation {
     );
   }, []);
 
-  /** Mark the reply complete, hand the emotion across the seam, and announce it once. */
   const completeReply = useCallback(
-    (replyId: string, text: string, emotion: Emotion) => {
+    (replyId: string, text: string, nextEmotion: Emotion) => {
       setMessages((current) => {
         const hasBubble = current.some((message) => message.id === replyId);
         return hasBubble
@@ -280,9 +242,7 @@ export function useConversation(): Conversation {
           )
           : [...current, { id: replyId, author: 'character', text, status: 'completed' }];
       });
-      // The single value that crosses the seam (FR-020).
-      setEmotion(emotion);
-      // Announced once, whole, on completion - never progressively (FR-036).
+      setEmotion(nextEmotion);
       setAnnouncement(text);
       finish('idle', null);
     },
@@ -292,39 +252,32 @@ export function useConversation(): Conversation {
   const send = useCallback(
     (draft: string, model?: string) => {
       if (!isSendable(draft)) return;
-
       const currentThreadId = threadIdRef.current;
-      // Refuse to send if thread creation hasn't completed or failed (FR-045).
       if (!currentThreadId) {
         setNotice(copy.backendUnavailable);
         return;
       }
-
-      // Refused rather than queued, with the reason visible (FR-021).
       if (inFlightRef.current) {
         setNotice(copy.replyInProgress);
         return;
       }
       inFlightRef.current = true;
       setInFlight(true);
-
       const text = draft.trim();
 
-      if (isNewThreadUnsentRef.current && currentThreadId) {
+      if (isNewThreadUnsentRef.current) {
         isNewThreadUnsentRef.current = false;
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('chat:new-conversation', {
-              detail: {
-                id: currentThreadId,
-                threadId: currentThreadId,
-                title: text.slice(0, 30) || 'New Conversation',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              },
-            })
-          );
-        }
+        window.dispatchEvent(
+          new CustomEvent('chat:new-conversation', {
+            detail: {
+              id: currentThreadId,
+              threadId: currentThreadId,
+              title: text.slice(0, 30) || 'New Conversation',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          }),
+        );
       }
 
       const visitorMessage: Message = {
@@ -334,382 +287,278 @@ export function useConversation(): Conversation {
         status: 'completed',
       };
       const replyId = nextId('character');
-
-      // The visitor's message and the waiting state land in the same update as the send, before any
-      // request is made, so the visible response to a send is immediate (FR-015, SC-004).
-      // Also clean up any lingering empty/failed character messages from previous turns so they are not rendered.
-      setMessages((current) => {
-        const cleaned = current.filter(
+      setMessages((current) => [
+        ...current.filter(
           (m) =>
             !(
               m.author === 'character' &&
               (!m.text || m.text.trim().length === 0) &&
               (!m.toolCalls || m.toolCalls.length === 0)
             ),
-        );
-        return [...cleaned, visitorMessage];
-      });
+        ),
+        visitorMessage,
+      ]);
       setStatus('waiting');
       setNotice(null);
-
       const controller = new AbortController();
       abortRef.current = controller;
 
       void (async () => {
         try {
           const response = await sendMessage(currentThreadId, text, controller.signal, model);
-
           if (!response.ok || !response.body) {
             const mapped = noticeForStatus(response.status);
             finish(mapped.status, mapped.notice);
             return;
           }
-
-          const headerRunId = response.headers.get('x-chat-run-id');
-          if (headerRunId) {
-            currentRunIdRef.current = headerRunId;
-          }
-
+          currentRunIdRef.current = response.headers.get('x-chat-run-id');
           const reader = response.body.getReader();
           const requestId = nextId('req');
           currentRequestIdRef.current = requestId;
-
           const streamController = createStreamController({
             requestId,
             onStart: (event, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
-              if (event.run_id) {
-                currentRunIdRef.current = event.run_id;
-              }
+              if (event.run_id) currentRunIdRef.current = event.run_id;
             },
             onStatus: (nextStatus, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
-              if (nextStatus === 'streaming') {
-                setStatus('streaming');
-                setMessages((current) => {
-                  const hasBubble = current.some((message) => message.id === replyId);
-                  return hasBubble
-                    ? current.map((message) =>
-                      message.id === replyId ? { ...message, status: 'streaming' } : message,
-                    )
-                    : [...current, { id: replyId, author: 'character', text: '', status: 'streaming' }];
-                });
-              }
+              if (nextStatus !== 'streaming') return;
+              setStatus('streaming');
+              setMessages((current) =>
+                current.some((message) => message.id === replyId)
+                  ? current.map((message) =>
+                    message.id === replyId ? { ...message, status: 'streaming' } : message,
+                  )
+                  : [...current, { id: replyId, author: 'character', text: '', status: 'streaming' }],
+              );
             },
             onText: (visible, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
               setStatus('streaming');
               pendingTextRef.current = visible;
+              const update = () => {
+                const latest = pendingTextRef.current;
+                if (latest === null) return;
+                setMessages((current) =>
+                  current.some((message) => message.id === replyId)
+                    ? current.map((message) =>
+                      message.id === replyId ? { ...message, text: latest } : message,
+                    )
+                    : [...current, { id: replyId, author: 'character', text: latest, status: 'streaming' }],
+                );
+              };
               if (typeof requestAnimationFrame === 'function') {
                 if (rafIdRef.current === null) {
                   rafIdRef.current = requestAnimationFrame(() => {
                     rafIdRef.current = null;
-                    const latest = pendingTextRef.current;
-                    if (latest !== null) {
-                      setMessages((current) => {
-                        const hasBubble = current.some((message) => message.id === replyId);
-                        return hasBubble
-                          ? current.map((message) =>
-                            message.id === replyId ? { ...message, text: latest } : message,
-                          )
-                          : [...current, { id: replyId, author: 'character', text: latest, status: 'streaming' }];
-                      });
-                    }
+                    update();
                   });
                 }
-              } else {
-                setMessages((current) => {
-                  const hasBubble = current.some((message) => message.id === replyId);
-                  return hasBubble
-                    ? current.map((message) =>
-                      message.id === replyId ? { ...message, text: visible } : message,
-                    )
-                    : [...current, { id: replyId, author: 'character', text: visible, status: 'streaming' }];
-                });
-              }
+              } else update();
             },
-            onComplete: (completedText, emotion, _metrics, reqId) => {
+            onComplete: (completedText, nextEmotion, _metrics, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
-              if (rafIdRef.current !== null) {
-                cancelAnimationFrame(rafIdRef.current);
-                rafIdRef.current = null;
-              }
               pendingTextRef.current = null;
-              if (completedText.trim().length === 0) {
-                let hadToolCalls = false;
-                setMessages((current) => {
-                  const target = current.find((message) => message.id === replyId);
-                  if (target?.toolCalls && target.toolCalls.length > 0) {
-                    hadToolCalls = true;
-                    return current.map((message) =>
-                      message.id === replyId ? { ...message, text: '', status: 'completed' } : message,
-                    );
-                  }
-                  return current.filter((message) => message.id !== replyId);
-                });
+              if (!completedText.trim()) {
+                const hadToolCalls = messagesRef.current.some(
+                  (message) => message.id === replyId && message.toolCalls?.length,
+                );
                 if (hadToolCalls) {
-                  setEmotion(emotion);
+                  setMessages((current) =>
+                    current.map((message) =>
+                      message.id === replyId ? { ...message, text: '', status: 'completed' } : message,
+                    ),
+                  );
+                  setEmotion(nextEmotion);
                   finish('idle', null);
-                  return;
+                } else {
+                  setMessages((current) => current.filter((message) => message.id !== replyId));
+                  setEmotion(NEUTRAL);
+                  finish('error', copy.failedEmpty);
                 }
-                setEmotion(NEUTRAL);
-                finish('error', copy.failedEmpty);
                 return;
               }
-              completeReply(replyId, completedText, emotion);
+              completeReply(replyId, completedText, nextEmotion);
             },
-            onError: (errorMessage, partialText, emotion, _metrics, reqId) => {
+            onError: (errorMessage, partialText, nextEmotion, _metrics, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
+              setMessages((current) =>
+                partialText.trim()
+                  ? current.map((message) =>
+                    message.id === replyId
+                      ? { ...message, text: partialText, status: 'error' }
+                      : message,
+                  )
+                  : current.filter((message) => message.id !== replyId),
+              );
+              setEmotion(nextEmotion);
+              finish('error', errorMessage || copy.failedGeneric);
+            },
+            onInterrupt: (event, partialText, nextEmotion, _metrics, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              const value = event.value;
+              const prompt =
+                typeof value === 'string'
+                  ? value
+                  : typeof value === 'object' && value !== null
+                    ? (value as Record<string, unknown>).message?.toString() ||
+                    (value as Record<string, unknown>).question?.toString() ||
+                    JSON.stringify(value)
+                    : '';
+              const displayText = partialText.trim() || prompt;
+              setMessages((current) =>
+                current.some((message) => message.id === replyId)
+                  ? current.map((message) =>
+                    message.id === replyId
+                      ? { ...message, text: displayText, status: 'interrupted', interruptId: event.interrupt_id }
+                      : message,
+                  )
+                  : [...current, { id: replyId, author: 'character', text: displayText, status: 'interrupted', interruptId: event.interrupt_id }],
+              );
+              setEmotion(nextEmotion);
+              finish('idle', null);
+            },
+            onInterrupted: (partialText, nextEmotion, _metrics, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+
               if (rafIdRef.current !== null) {
                 cancelAnimationFrame(rafIdRef.current);
                 rafIdRef.current = null;
               }
+
               pendingTextRef.current = null;
+
               if (partialText.trim().length > 0) {
                 setMessages((current) =>
                   current.map((message) =>
-                    message.id === replyId ? { ...message, text: partialText, status: 'error' } : message,
-                  ),
-                );
-              } else {
-                setMessages((current) => current.filter((message) => message.id !== replyId));
-              }
-              setEmotion(emotion);
-              finish('error', errorMessage || copy.failedGeneric);
-            },
-            onInterrupt: (interruptEvent, partialText, emotion, _metrics, reqId) => {
-              if (reqId && reqId !== currentRequestIdRef.current) return;
-              if (rafIdRef.current !== null) {
-                cancelAnimationFrame(rafIdRef.current);
-                rafIdRef.current = null;
-              }
-              pendingTextRef.current = null;
-
-              const promptVal = interruptEvent.value;
-              const interruptPrompt =
-                typeof promptVal === 'string'
-                  ? promptVal
-                  : typeof promptVal === 'object' && promptVal !== null
-                    ? (promptVal as Record<string, unknown>).message?.toString() ||
-                    (promptVal as Record<string, unknown>).question?.toString() ||
-                    JSON.stringify(promptVal)
-                    : '';
-
-              const displayText = partialText.trim().length > 0 ? partialText : interruptPrompt;
-
-              setMessages((current) => {
-                const hasBubble = current.some((message) => message.id === replyId);
-                return hasBubble
-                  ? current.map((message) =>
                     message.id === replyId
                       ? {
                         ...message,
-                        text: displayText,
+                        text: partialText,
                         status: 'interrupted',
-                        interruptId: interruptEvent.interrupt_id,
                       }
                       : message,
-                  )
-                  : [
-                    ...current,
-                    {
-                      id: replyId,
-                      author: 'character',
-                      text: displayText,
-                      status: 'interrupted',
-                      interruptId: interruptEvent.interrupt_id,
-                    },
-                  ];
-              });
-
-              setEmotion(emotion);
-              finish('idle', null);
-            },
-            onInterrupted: (partialText, emotion, _metrics, reqId) => {
-              if (reqId && reqId !== currentRequestIdRef.current) return;
-              if (rafIdRef.current !== null) {
-                cancelAnimationFrame(rafIdRef.current);
-                rafIdRef.current = null;
-              }
-              pendingTextRef.current = null;
-              if (partialText.trim().length > 0) {
-                setMessages((current) =>
-                  current.map((message) =>
-                    message.id === replyId ? { ...message, text: partialText, status: 'interrupted' } : message,
                   ),
                 );
-                setEmotion(emotion);
+
+                setEmotion(nextEmotion);
                 finish('error', copy.failedStalled);
-              } else {
-                let hadToolCalls = false;
-                setMessages((current) => {
-                  const target = current.find((message) => message.id === replyId);
-                  if (target?.toolCalls && target.toolCalls.length > 0) {
-                    hadToolCalls = true;
-                    return current.map((message) =>
-                      message.id === replyId ? { ...message, text: '', status: 'interrupted' } : message,
-                    );
-                  }
-                  return current.filter((message) => message.id !== replyId);
-                });
-                if (hadToolCalls) {
-                  setEmotion(emotion);
-                  finish('idle', null);
-                  return;
-                }
-                setEmotion(NEUTRAL);
-                finish('error', copy.failedEmpty);
-              }
-            },
-            onCancelled: (partialText, emotion, metrics, reqId) => {
-              if (reqId && reqId !== currentRequestIdRef.current) return;
-              if (rafIdRef.current !== null) {
-                cancelAnimationFrame(rafIdRef.current);
-                rafIdRef.current = null;
-              }
-              pendingTextRef.current = null;
-              if (metrics.outcome === 'stalled') {
-                if (partialText.trim().length > 0) {
-                  setMessages((current) =>
-                    current.map((message) =>
-                      message.id === replyId ? { ...message, text: partialText, status: 'interrupted' } : message,
-                    ),
-                  );
-                  setEmotion(NEUTRAL);
-                  finish('error', copy.failedStalled);
-                  return;
-                }
-                let hadToolCalls = false;
-                setMessages((current) => {
-                  const target = current.find((message) => message.id === replyId);
-                  if (target?.toolCalls && target.toolCalls.length > 0) {
-                    hadToolCalls = true;
-                    return current.map((message) =>
-                      message.id === replyId ? { ...message, text: '', status: 'interrupted' } : message,
-                    );
-                  }
-                  return current.filter((message) => message.id !== replyId);
-                });
-                if (hadToolCalls) {
-                  setEmotion(NEUTRAL);
-                  finish('idle', null);
-                  return;
-                }
-                finish('error', copy.failedTimeout);
                 return;
               }
-              if (partialText.trim().length > 0) {
-                setMessages((current) =>
-                  current.map((message) =>
-                    message.id === replyId ? { ...message, text: partialText, status: 'cancelled' } : message,
-                  ),
+
+              let hadToolCalls = false;
+
+              setMessages((current) => {
+                const target = current.find(
+                  (message) => message.id === replyId,
                 );
-              } else {
-                setMessages((current) => current.filter((message) => message.id !== replyId));
+
+                if (target?.toolCalls && target.toolCalls.length > 0) {
+                  hadToolCalls = true;
+
+                  return current.map((message) =>
+                    message.id === replyId
+                      ? {
+                        ...message,
+                        text: '',
+                        status: 'interrupted',
+                      }
+                      : message,
+                  );
+                }
+
+                return current.filter(
+                  (message) => message.id !== replyId,
+                );
+              });
+
+              if (hadToolCalls) {
+                setEmotion(nextEmotion);
+                finish('idle', null);
+                return;
               }
-              setEmotion(emotion);
-              finish('idle', null);
+
+              setEmotion(NEUTRAL);
+              finish('error', copy.failedEmpty);
+            },
+            onCancelled: (partialText, nextEmotion, metrics, reqId) => {
+              if (reqId && reqId !== currentRequestIdRef.current) return;
+              setMessages((current) =>
+                partialText.trim()
+                  ? current.map((message) =>
+                    message.id === replyId
+                      ? { ...message, text: partialText, status: metrics.outcome === 'stalled' ? 'interrupted' : 'cancelled' }
+                      : message,
+                  )
+                  : current.filter((message) => message.id !== replyId),
+              );
+              setEmotion(metrics.outcome === 'stalled' ? NEUTRAL : nextEmotion);
+              finish(metrics.outcome === 'stalled' ? 'error' : 'idle', metrics.outcome === 'stalled' ? copy.failedTimeout : null);
             },
             onToolUpdate: (toolCalls, reqId) => {
               if (reqId && reqId !== currentRequestIdRef.current) return;
-              setMessages((current) => {
-                const hasBubble = current.some((message) => message.id === replyId);
-                return hasBubble
-                  ? current.map((message) =>
-                    message.id === replyId ? { ...message, toolCalls } : message,
-                  )
-                  : [...current, { id: replyId, author: 'character', text: '', status: 'streaming', toolCalls }];
-              });
+              setMessages((current) =>
+                current.some((message) => message.id === replyId)
+                  ? current.map((message) => message.id === replyId ? { ...message, toolCalls } : message)
+                  : [...current, { id: replyId, author: 'character', text: '', status: 'streaming', toolCalls }],
+              );
             },
           });
           streamControllerRef.current = streamController;
-
           for (; ;) {
             const { done, value } = await reader.read();
             if (done) break;
-            if (value) {
-              streamController.processChunk(value);
-            }
+            if (value) streamController.processChunk(value);
           }
           streamController.end();
         } catch (error) {
-          if (rafIdRef.current !== null) {
-            cancelAnimationFrame(rafIdRef.current);
-            rafIdRef.current = null;
-          }
-          const aborted = error instanceof DOMException && error.name === 'AbortError';
-          if (aborted) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
             inFlightRef.current = false;
             return;
           }
-
-          setMessages((current) => {
-            const target = current.find((message) => message.id === replyId);
-            if (target && target.text && target.text.trim().length > 0) {
-              return current.map((message) =>
-                message.id === replyId ? { ...message, status: 'error' } : message,
-              );
-            }
-            if (target?.toolCalls && target.toolCalls.length > 0) {
-              return current.map((message) =>
-                message.id === replyId ? { ...message, status: 'error' } : message,
-              );
-            }
-            return current.filter((message) => message.id !== replyId);
-          });
-
+          setMessages((current) =>
+            current.filter((message) =>
+              message.id !== replyId || Boolean(message.text.trim() || message.toolCalls?.length),
+            ),
+          );
           finish('error', copy.failedGeneric);
         }
       })();
     },
-    [finish, completeReply],
+    [completeReply, finish],
   );
 
   const resume = useCallback(
-    async (decision: 'yes' | 'no', interruptId?: string, targetMessageId?: string) => {
+    async (decision: InterruptDecision, interruptId?: string, targetMessageId?: string) => {
       const currentThreadId = threadIdRef.current;
-      if (!currentThreadId) {
-        throw new Error('Thread unavailable');
-      }
-
+      if (!currentThreadId) throw new Error('Thread unavailable');
       inFlightRef.current = true;
       setInFlight(true);
       setStatus('streaming');
       setNotice(null);
-
       const targetMsg =
         (targetMessageId && messagesRef.current.find((m) => m.id === targetMessageId)) ||
         messagesRef.current.find((m) => m.status === 'interrupted');
       const replyId = targetMsg?.id || nextId('character');
       const effectiveInterruptId = interruptId || targetMsg?.interruptId;
-
       setMessages((current) =>
         current.map((message) =>
-          message.id === replyId
-            ? { ...message, interruptDecision: decision }
-            : message,
+          message.id === replyId ? { ...message, interruptDecision: decision } : message,
         ),
       );
-
       const controller = new AbortController();
       abortRef.current = controller;
 
       try {
         const response = await resumeChat(currentThreadId, decision, effectiveInterruptId, controller.signal);
-
         if (!response.ok || !response.body) {
           const mapped = noticeForStatus(response.status);
           finish(mapped.status, mapped.notice);
           throw new Error(`Resume failed with status ${response.status}`);
         }
-
-        const headerRunId = response.headers.get('x-chat-run-id');
-        if (headerRunId) {
-          currentRunIdRef.current = headerRunId;
-        }
-
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
+        currentRunIdRef.current = response.headers.get('x-chat-run-id');
+        if ((response.headers.get('content-type') || '').includes('application/json')) {
           setMessages((current) =>
             current.map((message) =>
               message.id === replyId
@@ -720,244 +569,117 @@ export function useConversation(): Conversation {
           finish('idle', null);
           return;
         }
-
         const reader = response.body.getReader();
         const requestId = nextId('req');
         currentRequestIdRef.current = requestId;
-
         const streamController = createStreamController({
           requestId,
           initialToolCalls: targetMsg?.toolCalls,
           onStart: (event, reqId) => {
             if (reqId && reqId !== currentRequestIdRef.current) return;
-            if (event.run_id) {
-              currentRunIdRef.current = event.run_id;
-            }
+            if (event.run_id) currentRunIdRef.current = event.run_id;
           },
           onStatus: (nextStatus, reqId) => {
-            if (reqId && reqId !== currentRequestIdRef.current) return;
-            if (nextStatus === 'streaming') {
-              setStatus('streaming');
-            }
+            if ((!reqId || reqId === currentRequestIdRef.current) && nextStatus === 'streaming') setStatus('streaming');
           },
           onText: (visible, reqId) => {
             if (reqId && reqId !== currentRequestIdRef.current) return;
-            setStatus('streaming');
-            pendingTextRef.current = visible;
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === replyId ? { ...message, text: visible, status: 'streaming' } : message,
-              ),
-            );
+            setMessages((current) => current.map((message) => message.id === replyId ? { ...message, text: visible, status: 'streaming' } : message));
           },
-          onComplete: (completedText, emotion, _metrics, reqId) => {
+          onComplete: (text, nextEmotion, _metrics, reqId) => {
             if (reqId && reqId !== currentRequestIdRef.current) return;
-            pendingTextRef.current = null;
-            completeReply(replyId, completedText, emotion);
+            completeReply(replyId, text, nextEmotion);
           },
-          onError: (errorMessage, partialText, emotion, _metrics, reqId) => {
+          onError: (errorMessage, partialText, nextEmotion, _metrics, reqId) => {
             if (reqId && reqId !== currentRequestIdRef.current) return;
-            pendingTextRef.current = null;
-            if (partialText.trim().length > 0) {
-              setMessages((current) =>
-                current.map((message) =>
-                  message.id === replyId ? { ...message, text: partialText, status: 'error' } : message,
-                ),
-              );
-            }
-            setEmotion(emotion);
+            if (partialText.trim()) setMessages((current) => current.map((message) => message.id === replyId ? { ...message, text: partialText, status: 'error' } : message));
+            setEmotion(nextEmotion);
             finish('error', errorMessage || copy.failedGeneric);
           },
-          onInterrupt: (interruptEvent, partialText, emotion, _metrics, reqId) => {
+          onInterrupt: (event, partialText, nextEmotion, _metrics, reqId) => {
             if (reqId && reqId !== currentRequestIdRef.current) return;
-            pendingTextRef.current = null;
-            const promptVal = interruptEvent.value;
-            const interruptPrompt =
-              typeof promptVal === 'string'
-                ? promptVal
-                : typeof promptVal === 'object' && promptVal !== null
-                  ? (promptVal as Record<string, unknown>).message?.toString() ||
-                  (promptVal as Record<string, unknown>).question?.toString() ||
-                  JSON.stringify(promptVal)
-                  : '';
-            const displayText = partialText.trim().length > 0 ? partialText : interruptPrompt;
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === replyId
-                  ? {
-                    ...message,
-                    text: displayText,
-                    status: 'interrupted',
-                    interruptId: interruptEvent.interrupt_id,
-                  }
-                  : message,
-              ),
-            );
-            setEmotion(emotion);
+            const value = event.value;
+            const prompt = typeof value === 'string' ? value : typeof value === 'object' && value !== null ? (value as Record<string, unknown>).message?.toString() || (value as Record<string, unknown>).question?.toString() || JSON.stringify(value) : '';
+            setMessages((current) => current.map((message) => message.id === replyId ? { ...message, text: partialText.trim() || prompt, status: 'interrupted', interruptId: event.interrupt_id } : message));
+            setEmotion(nextEmotion);
             finish('idle', null);
           },
-          onInterrupted: (partialText, emotion, _metrics, reqId) => {
+          onInterrupted: (partialText, nextEmotion, _metrics, reqId) => {
             if (reqId && reqId !== currentRequestIdRef.current) return;
-            pendingTextRef.current = null;
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === replyId
-                  ? { ...message, text: partialText || message.text, status: 'interrupted' }
-                  : message,
-              ),
-            );
-            setEmotion(emotion);
+            setMessages((current) => current.map((message) => message.id === replyId ? { ...message, text: partialText || message.text, status: 'interrupted' } : message));
+            setEmotion(nextEmotion);
             finish('idle', null);
           },
           onToolUpdate: (toolCalls, reqId) => {
             if (reqId && reqId !== currentRequestIdRef.current) return;
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === replyId ? { ...message, toolCalls } : message,
-              ),
-            );
+            setMessages((current) => current.map((message) => message.id === replyId ? { ...message, toolCalls } : message));
           },
-          onCancelled: (partialText, emotion, _metrics, reqId) => {
+          onCancelled: (partialText, nextEmotion, _metrics, reqId) => {
             if (reqId && reqId !== currentRequestIdRef.current) return;
-            if (rafIdRef.current !== null) {
-              cancelAnimationFrame(rafIdRef.current);
-              rafIdRef.current = null;
-            }
-            pendingTextRef.current = null;
-            if (partialText.trim().length > 0) {
-              setMessages((current) =>
-                current.map((message) =>
-                  message.id === replyId ? { ...message, text: partialText, status: 'cancelled' } : message,
-                ),
-              );
-            }
-            setEmotion(emotion);
+            if (partialText.trim()) setMessages((current) => current.map((message) => message.id === replyId ? { ...message, text: partialText, status: 'cancelled' } : message));
+            setEmotion(nextEmotion);
             finish('idle', null);
           },
         });
         streamControllerRef.current = streamController;
-
         for (; ;) {
           const { done, value } = await reader.read();
           if (done) break;
-          if (value) {
-            streamController.processChunk(value);
-          }
+          if (value) streamController.processChunk(value);
         }
         streamController.end();
       } catch (error) {
-        const aborted = error instanceof DOMException && error.name === 'AbortError';
-        if (aborted) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
           inFlightRef.current = false;
           return;
         }
-        setMessages((current) =>
-          current.map((message) =>
-            message.id === replyId
-              ? { ...message, status: 'interrupted', interruptDecision: undefined }
-              : message,
-          ),
-        );
+        setMessages((current) => current.map((message) => message.id === replyId ? { ...message, status: 'interrupted', interruptDecision: undefined } : message));
         finish('idle', null);
         throw error;
       }
     },
-    [finish, completeReply],
+    [completeReply, finish],
   );
 
   const stop = useCallback(async () => {
     const currentThreadId = threadIdRef.current;
     const currentRunId = currentRunIdRef.current;
-
-    if (rafIdRef.current !== null) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
+    if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+    rafIdRef.current = null;
     pendingTextRef.current = null;
-
-    // Abort the fetch connection
     abortRef.current?.abort();
-
-    // Cancel the stream controller locally
     streamControllerRef.current?.cancel('user_stopped');
-
-    // Ensure any streaming message is marked as cancelled
-    setMessages((current) =>
-      current.map((message) =>
-        message.status === 'streaming'
-          ? { ...message, status: 'cancelled' }
-          : message,
-      ),
-    );
-
+    setMessages((current) => current.map((message) => message.status === 'streaming' ? { ...message, status: 'cancelled' } : message));
     finish('idle', null);
-
-    // Call POST /chat/stop on the server if thread exists (ignoring server error)
     if (currentThreadId) {
-      try {
-        await stopChat(currentThreadId, currentRunId);
-      } catch {
-        // Ignore backend failure per spec edge case
-      }
+      try { await stopChat(currentThreadId, currentRunId); } catch { }
     }
   }, [finish]);
 
   const loadHistory = useCallback(async (targetThreadId: string) => {
     if (!targetThreadId) return;
-
-    // Abort any ongoing streaming or connection
-    if (rafIdRef.current !== null) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
+    if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+    rafIdRef.current = null;
     pendingTextRef.current = null;
     abortRef.current?.abort();
     streamControllerRef.current?.cancel('user_navigated');
-
     activeHistoryThreadIdRef.current = targetThreadId;
     setIsHistoryLoading(true);
     setHistoryError(null);
     setMessages([]);
-
     try {
       const historyItems = await fetchHistory(targetThreadId);
-
-      // Guard against race conditions if another thread was selected
-      if (activeHistoryThreadIdRef.current !== targetThreadId) {
-        return;
-      }
-
+      if (activeHistoryThreadIdRef.current !== targetThreadId) return;
       const mappedMessages: Message[] = historyItems.map((item) => {
-        let author: 'visitor' | 'character' = 'character';
-        if (item.author === 'visitor' || item.author === 'user') {
-          author = 'visitor';
-        }
-
-        let toolCalls = undefined;
-        if (item.toolCalls) {
-          if (typeof item.toolCalls === 'string') {
-            try {
-              const parsed = JSON.parse(item.toolCalls);
-              if (Array.isArray(parsed)) {
-                toolCalls = parsed;
-              }
-            } catch {
-              // Non-JSON string, leave undefined
-            }
-          } else if (Array.isArray(item.toolCalls)) {
-            toolCalls = item.toolCalls;
-          }
-        }
-
-        const validStatus: MessageStatus =
-          item.status === 'interrupted' ||
-          item.status === 'cancelled' ||
-          item.status === 'error' ||
-          item.status === 'streaming' ||
-          item.status === 'pending'
-            ? item.status
-            : 'completed';
-
+        const author = item.author === 'visitor' || item.author === 'user' ? 'visitor' : 'character';
+        let toolCalls;
+        if (typeof item.toolCalls === 'string') {
+          try {
+            const parsed = JSON.parse(item.toolCalls);
+            if (Array.isArray(parsed)) toolCalls = parsed;
+          } catch { }
+        } else if (Array.isArray(item.toolCalls)) toolCalls = item.toolCalls;
+        const validStatus: MessageStatus = ['interrupted', 'cancelled', 'error', 'streaming', 'pending'].includes(item.status || '') ? item.status as MessageStatus : 'completed';
         return {
           id: item.id || nextId(author),
           author,
@@ -965,13 +687,9 @@ export function useConversation(): Conversation {
           status: validStatus,
           toolCalls,
           interruptId: item.interruptId || undefined,
-          interruptDecision:
-            item.interruptDecision === 'yes' || item.interruptDecision === 'no'
-              ? item.interruptDecision
-              : undefined,
+          interruptDecision: item.interruptDecision === 'yes' || item.interruptDecision === 'no' ? item.interruptDecision : undefined,
         };
       });
-
       setMessages(mappedMessages);
       setThreadId(targetThreadId);
       threadIdRef.current = targetThreadId;
@@ -980,51 +698,33 @@ export function useConversation(): Conversation {
       inFlightRef.current = false;
       setIsHistoryLoading(false);
       setHistoryError(null);
-
       try {
-        if (typeof window !== 'undefined' && window.sessionStorage) {
-          sessionStorage.setItem(STORAGE_KEY_THREAD, targetThreadId);
-          sessionStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(mappedMessages));
-        }
-      } catch {
-        // Ignore sessionStorage access errors
-      }
-    } catch (err) {
-      if (activeHistoryThreadIdRef.current !== targetThreadId) {
-        return;
-      }
-      const msg = err instanceof Error ? err.message : 'Failed to load conversation history.';
-      setHistoryError(msg);
+        sessionStorage.setItem(STORAGE_KEY_THREAD, targetThreadId);
+        sessionStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(mappedMessages));
+      } catch { }
+    } catch (error) {
+      if (activeHistoryThreadIdRef.current !== targetThreadId) return;
+      setHistoryError(error instanceof Error ? error.message : 'Failed to load conversation history.');
       setIsHistoryLoading(false);
     }
   }, []);
 
   const startNewChat = useCallback(async () => {
-    // Abort any ongoing streaming or connection
-    if (rafIdRef.current !== null) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
+    if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+    rafIdRef.current = null;
     pendingTextRef.current = null;
     abortRef.current?.abort();
     streamControllerRef.current?.cancel('user_navigated');
-
     activeHistoryThreadIdRef.current = null;
     setIsHistoryLoading(true);
     setHistoryError(null);
     setMessages([]);
     setThreadId(null);
     threadIdRef.current = null;
-
     try {
-      if (typeof window !== 'undefined' && window.sessionStorage) {
-        sessionStorage.removeItem(STORAGE_KEY_THREAD);
-        sessionStorage.removeItem(STORAGE_KEY_MESSAGES);
-      }
-    } catch {
-      // Ignore
-    }
-
+      sessionStorage.removeItem(STORAGE_KEY_THREAD);
+      sessionStorage.removeItem(STORAGE_KEY_MESSAGES);
+    } catch { }
     try {
       const newId = await createThread();
       threadIdRef.current = newId;
@@ -1035,32 +735,18 @@ export function useConversation(): Conversation {
       inFlightRef.current = false;
       setIsHistoryLoading(false);
       setHistoryError(null);
-
-      try {
-        if (typeof window !== 'undefined' && window.sessionStorage) {
-          sessionStorage.setItem(STORAGE_KEY_THREAD, newId);
-        }
-      } catch {
-        // Ignore
-      }
+      try { sessionStorage.setItem(STORAGE_KEY_THREAD, newId); } catch { }
       return newId;
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'Failed to initialize new conversation. Please try again.';
-      setHistoryError(msg);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : 'Failed to initialize new conversation. Please try again.');
       setIsHistoryLoading(false);
       return null;
     }
   }, []);
 
   const retryHistory = useCallback(async () => {
-    if (activeHistoryThreadIdRef.current) {
-      await loadHistory(activeHistoryThreadIdRef.current);
-    } else {
-      await startNewChat();
-    }
+    if (activeHistoryThreadIdRef.current) await loadHistory(activeHistoryThreadIdRef.current);
+    else await startNewChat();
   }, [loadHistory, startNewChat]);
 
   return {
