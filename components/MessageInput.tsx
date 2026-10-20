@@ -70,19 +70,20 @@ export default function MessageInput({
   onModelChange,
 }: Props) {
   const isControlled = typeof value === 'string';
-  const [internalDraft, setInternalDraft] = useState(() => {
+  const [internalDraft, setInternalDraft] = useState('');
+
+  useIsomorphicLayoutEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
         const cached = sessionStorage.getItem(STORAGE_KEY_DRAFT);
         if (cached) {
-          return clampInput(cached);
+          setInternalDraft(clampInput(cached));
         }
       }
     } catch {
       // Ignore sessionStorage access errors
     }
-    return '';
-  });
+  }, []);
 
   const currentDraft = isControlled ? value : internalDraft;
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);

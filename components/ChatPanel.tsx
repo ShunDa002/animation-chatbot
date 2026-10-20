@@ -40,16 +40,20 @@ export default function ChatPanel({
   const effectiveHistoryError = historyError ?? conversation.historyError ?? null;
   const handleRetryHistory = onRetryHistory ?? conversation.retryHistory;
 
-  const [inputDraft, setInputDraft] = useState(() => {
+  const [inputDraft, setInputDraft] = useState('');
+
+  useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
-        return window.sessionStorage.getItem(STORAGE_KEY_DRAFT) || '';
+        const saved = window.sessionStorage.getItem(STORAGE_KEY_DRAFT);
+        if (saved) {
+          setInputDraft(saved);
+        }
       }
     } catch {
       // Ignore
     }
-    return '';
-  });
+  }, []);
 
   const lastSubmittedPromptRef = useRef<string>('');
   const prevStatusRef = useRef(status);
