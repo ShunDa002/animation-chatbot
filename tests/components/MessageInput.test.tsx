@@ -377,6 +377,33 @@ describe('MessageInput - Dynamic Models from Backend', () => {
 
     expect(onSend).toHaveBeenCalledWith('Hello world', 'custom-model-2');
   });
+
+  it('gates POST /models fetch when isBackendReady is false until backend is ready (FR-040)', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ['gated-model-1', 'gated-model-2'],
+    });
+    globalThis.fetch = fetchMock;
+
+    try {
+      const { rerender } = render(<MessageInput onSend={vi.fn()} isBackendReady={false} />);
+
+      // fetchMock should not have been called while isBackendReady is false
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      // Transition isBackendReady to true
+      rerender(<MessageInput onSend={vi.fn()} isBackendReady={true} />);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('option', { name: 'gated-model-1' })).toBeTruthy();
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 

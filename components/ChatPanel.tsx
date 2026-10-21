@@ -14,6 +14,8 @@ export interface ChatPanelProps {
   isHistoryLoading?: boolean;
   historyError?: string | null;
   onRetryHistory?: () => void;
+  /** When false during startup, holds back POST /models in MessageInput (FR-040) */
+  isBackendReady?: boolean;
 }
 
 /**
@@ -33,6 +35,7 @@ export default function ChatPanel({
   isHistoryLoading,
   historyError,
   onRetryHistory,
+  isBackendReady,
 }: ChatPanelProps) {
   const { messages, status, notice, announcement, inFlight, send, resume, threadId } = conversation;
 
@@ -40,16 +43,20 @@ export default function ChatPanel({
   const effectiveHistoryError = historyError ?? conversation.historyError ?? null;
   const handleRetryHistory = onRetryHistory ?? conversation.retryHistory;
 
-  const [inputDraft, setInputDraft] = useState(() => {
+  const [inputDraft, setInputDraft] = useState('');
+
+  useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
-        return window.sessionStorage.getItem(STORAGE_KEY_DRAFT) || '';
+        const saved = window.sessionStorage.getItem(STORAGE_KEY_DRAFT);
+        if (saved) {
+          setInputDraft(saved);
+        }
       }
     } catch {
       // Ignore
     }
-    return '';
-  });
+  }, []);
 
   const lastSubmittedPromptRef = useRef<string>('');
   const prevStatusRef = useRef(status);
@@ -133,6 +140,7 @@ export default function ChatPanel({
           disabledReason={disabledReason}
           isWaitingForResponse={inFlight && !isInterruptActive}
           status={status}
+          isBackendReady={isBackendReady ?? conversation.isBackendReady}
         />
 
         <Announcer status={status} announcement={announcement} notice={notice} />

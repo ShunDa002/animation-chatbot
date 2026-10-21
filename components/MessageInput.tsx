@@ -39,6 +39,8 @@ export interface MessageInputProps {
   selectedModel?: string;
   /** Optional callback when selected model changes */
   onModelChange?: (model: string) => void;
+  /** Defaults to true. When false during initial startup, holds back POST /models until ready (FR-040) */
+  isBackendReady?: boolean;
 }
 
 export type Props = MessageInputProps;
@@ -68,21 +70,23 @@ export default function MessageInput({
   models: externalModels,
   selectedModel: controlledModel,
   onModelChange,
+  isBackendReady = true,
 }: Props) {
   const isControlled = typeof value === 'string';
-  const [internalDraft, setInternalDraft] = useState(() => {
+  const [internalDraft, setInternalDraft] = useState('');
+
+  useIsomorphicLayoutEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
         const cached = sessionStorage.getItem(STORAGE_KEY_DRAFT);
         if (cached) {
-          return clampInput(cached);
+          setInternalDraft(clampInput(cached));
         }
       }
     } catch {
       // Ignore sessionStorage access errors
     }
-    return '';
-  });
+  }, []);
 
   const currentDraft = isControlled ? value : internalDraft;
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
@@ -108,6 +112,10 @@ export default function MessageInput({
       return;
     }
 
+    if (!isBackendReady) {
+      return;
+    }
+
     const abortController = new AbortController();
 
     async function loadModels() {
@@ -129,7 +137,7 @@ export default function MessageInput({
     return () => {
       abortController.abort();
     };
-  }, [externalModels]);
+  }, [externalModels, isBackendReady]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isMountedRef = useRef(false);

@@ -1,0 +1,2 @@
+function e(e){return/^https?:\/\//i.test(e)}function t(t){if(!t)return``;if(!e(t))return t;try{let e=new URL(t).pathname;for(;e.endsWith(`/`);)e=e.slice(0,-1);return e===``?``:e}catch{return``}}function n(e,t,n){let r=e;return t&&(r===t||r.startsWith(t+`/`))&&(r=r.slice(t.length)||`/`),n&&(r===n||r.startsWith(n+`/`))&&(r=r.slice(n.length)||`/`),r.startsWith(`/_next/static/`)}export{n,t};
+//# sourceMappingURL=asset-prefix-DG5zdfn4.js.map

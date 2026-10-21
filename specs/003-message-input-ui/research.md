@@ -16,3 +16,26 @@
 **Decision**: Clear the main chat area state immediately and show a skeleton loader while `POST /threads` is in flight.
 **Rationale**: Satisfies the 100ms feedback rule from the Constitution. Ensures the user knows their action was registered.
 **Alternatives considered**: Block the UI until the response returns (Rejected: Violates performance UX rules).
+
+## R4: Startup Backend Readiness Polling & Backoff Strategy
+**Decision**: Implement a framework-neutral `waitForBackendReady` utility in `lib/conversation/backend-readiness.ts` (following `docs/frontend_backend_readiness.md`) that polls `GET /health/ready` with `cache: "no-store"`, a 500 ms base delay, a 10,000 ms maximum delay cap, full jitter (`Math.floor(randomFn() * Math.min(maxDelayMs, baseDelayMs * 2 ** retryIndex))`), a 3,000 ms per-request timeout, and a 120,000 ms overall deadline. Inject `fetchFn` and `randomFn` for deterministic unit testing.
+**Rationale**: During backend startup (e.g., while `init_db()` runs before FastAPI serves requests), the frontend may encounter connection refusals, gateway errors (`502`/`503`/`504`), or per-request timeouts. Full jitter prevents synchronized retry storms across concurrent clients, while injectable `fetchFn` and `randomFn` satisfy Constitution Principle II (deterministic tests without wall-clock or network reliance).
+**Alternatives considered**:
+- Fixed-interval polling without jitter (Rejected: Causes thundering herd spikes when backend finishes booting).
+- Retrying all HTTP error codes until 120s (Rejected: Permanent client errors like `400`, `401`, `403`, `404` indicate misconfiguration or version mismatch; failing fast avoids a pointless 2-minute wait).
+
+## R5: Two-Phase Startup Timeout & Retry Architecture
+**Decision**: Enforce two independent, sequential startup deadlines inside the conversation startup coordinator (`useConversation`):
+1. **Phase 1 (Readiness)**: `waitForBackendReady` enforces a 120-second (`120_000 ms`) overall deadline (or fails immediately on non-retriable `4xx` other than `408`, `425`, `429`).
+2. **Phase 2 (Thread Creation)**: Once `/health/ready` returns `200 OK`, `createThread` runs with its own independent 10-second (`10_000 ms`) timeout.
+Clicking "Retry" on `LoadingOverlay` invokes a `retryStartup()` callback in `useConversation` (instead of `window.location.reload()`) that aborts any active startup `AbortController`, resets error state, and starts a fresh Phase 1 (120 s) → Phase 2 (10 s) sequence.
+**Rationale**: Keeps a single active polling loop at any time, prevents `LoadingOverlay`'s legacy 30-second timer from cutting off the 120-second readiness window prematurely, and ensures user-facing error copy remains generic (`copy.backendUnavailable`) without leaking HTTP status codes (Constitution Principle III, FR-017, FR-041).
+**Alternatives considered**:
+- Single shared timeout across readiness and thread creation (Rejected during clarification: readiness needs up to 120s for cold backend boots, whereas `POST /threads` against a ready server should fail within 10s).
+- Full page reload on Retry via `window.location.reload()` (Rejected: Re-downloads all static assets and Live2D bundles unnecessarily instead of cleanly restarting the startup state machine).
+
+## R6: Gating Backend-Dependent Startup Requests on Readiness
+**Decision**: Expose `isBackendReady: boolean` from `useConversation` (initially `false`, set to `true` as soon as `waitForBackendReady` resolves with `200 OK`). Pass `isBackendReady` from `app/page.tsx` and `components/ChatPanel.tsx` into `Sidebar` and `MessageInput` (defaulting the prop to `true` when omitted so isolated component tests remain backward-compatible). Neither `POST /threads`, `GET /conversations`, nor `POST /models` fires until `isBackendReady` is `true`. Mid-session operations (`startNewChat`, `send`, `loadHistory`, sidebar retry) do not re-run `/health/ready`.
+**Rationale**: Prevents `Sidebar` and `MessageInput` from firing requests against an unready backend on initial mount and rendering premature inline errors behind the loading overlay (FR-040, FR-042).
+**Alternatives considered**:
+- Intercepting all `fetch` calls globally (Rejected: Over-engineered and violates Constitution Principle I "no speculative abstraction").

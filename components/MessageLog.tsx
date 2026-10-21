@@ -191,7 +191,15 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
                 <HitlConfirmation
                   threadId={threadId || ''}
                   interruptId={message.interruptId}
-                  initialDecision={message.interruptDecision}
+                  initialDecision={
+                    message.interruptDecision === 'yes' || message.interruptDecision === 'no'
+                      ? message.interruptDecision
+                      : message.interruptDecision === true
+                        ? 'yes'
+                        : message.interruptDecision === false
+                          ? 'no'
+                          : null
+                  }
                   onResume={
                     onResume
                       ? (decision) => onResume(decision, message.interruptId, message.id)

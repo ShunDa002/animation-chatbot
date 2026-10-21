@@ -16,7 +16,7 @@
 **Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
 - [x] T003 Update global UI types for `MessageInputState` and `Conversation` in `lib/conversation/types.ts` (create file if it doesn't exist)
-- [x] T004 Implement mock/stub API handlers for `POST /threads` and `GET /conversations` to allow frontend development in `lib/api/mocks.ts`
+- [x] T004 Implement mock/stub API handlers for `POST /threads` and `GET /conversations` to allow frontend development in `tests/fixtures/mock-backend.ts`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -78,19 +78,29 @@
 
 ## Phase 6: User Story 4 - Loading State and Initialization (Priority: P1)
 
-**Goal**: A user opens the application and sees a full white page with a centrally displayed loader while the app connects to the backend and generates a threadId.
+**Goal**: A user opens the application and sees a full white page with a centrally displayed loader (`public/assets/loader.gif`) while the app polls `GET /health/ready` (up to 120s with exponential backoff and full jitter) and then generates a `threadId` via `POST /threads` (10s timeout), holding back all backend-dependent startup requests (`POST /threads`, `GET /conversations`, `POST /models`) until readiness succeeds.
 
-**Independent Test**: Simulating a network delay shows the loader. Passing 30 seconds shows the retry button. Successful connection fades into the UI.
+**Independent Test**: Simulating an unreachable or `503` backend shows the loader while `GET /health/ready` retries with backoff and no gated startup requests are sent. Passing 120s on readiness, receiving a permanent `4xx` on readiness, or exceeding 10s on `POST /threads` displays a generic error message and "Retry" button that restarts the full sequence from `GET /health/ready`.
 
 ### Tests for User Story 4
 
 - [x] T015a [P] [US4] E2E test for full-page loading and timeout retry in `tests/e2e/message-input.spec.ts`
+- [x] T038 [P] [US4] Add unit tests for `waitForBackendReady` (`200 OK` immediate stop, `503`/network retry, exponential backoff cap, full jitter, per-request timeout, 120s overall timeout, non-retriable `4xx` fail-fast, `AbortSignal` cancellation, `no-store` `GET` request) in `tests/unit/backend-readiness.test.ts`
+- [x] T039 [P] [US4] Add unit tests for two-phase startup orchestration (120s readiness deadline followed by 10s `createThread` timeout, gating of `createThread` before readiness, generic error notice without status codes on `4xx`/timeout, and single-loop `retryStartup` cancellation) in `tests/unit/useConversation.test.ts`
+- [x] T040 [P] [US4] Add component tests for startup request gating (`isBackendReady=false` holds back `GET /conversations` and `POST /models` until ready) and `LoadingOverlay` retry behavior in `tests/components/Sidebar.test.tsx`, `tests/components/MessageInput.test.tsx`, and `tests/components/LoadingOverlay.test.tsx`
 
 ### Implementation for User Story 4
 
 - [x] T016 [US4] Implement full-page loading state in main page `app/page.tsx`
 - [x] T017 [US4] Implement initialization timeout and retry error boundary in `app/page.tsx`
 - [x] T018 [US4] Add CSS fade-out/fade-in transitions between loading and main app view in `app/page.tsx`
+- [x] T041 [P] [US4] Implement `waitForBackendReady`, `BackendReadinessError`, `ReadinessOptions`, and `ReadinessResult` with capped exponential backoff (`500ms` base, `10000ms` max), full jitter, `3000ms` per-request timeout, and `120000ms` default overall timeout in `lib/conversation/backend-readiness.ts`
+- [x] T042 [US4] Re-export readiness utilities, remove stray `console.log` in `createThread`, and add `signal` and `timeoutMs` (`10000ms` startup timeout) support to `createThread` in `lib/conversation/backend.ts`
+- [x] T043 [US4] Clean up stash conflict markers and implement two-phase startup (`waitForBackendReady` 120s -> `createThread` 10s when no cached `threadId`, or direct transition to `idle` after readiness when `threadId` is restored from `sessionStorage`), `isBackendReady` state, and single-loop `retryStartup()` in `lib/conversation/useConversation.ts`
+- [x] T044 [P] [US4] Gate initial `GET /conversations` fetch on `isBackendReady` prop (defaulting to `true`) in `components/Sidebar.tsx`
+- [x] T045 [P] [US4] Gate initial `POST /models` fetch on `isBackendReady` prop (defaulting to `true`) in `components/MessageInput.tsx` and forward `isBackendReady` in `components/ChatPanel.tsx`
+- [x] T046 [P] [US4] Update `LoadingOverlay` timeout handling so it does not prematurely fire at 30s during the 120s readiness window and displays generic error copy with Retry button in `components/LoadingOverlay.tsx`
+- [x] T047 [US4] Wire `conversation.isBackendReady` and `conversation.retryStartup` (replacing `window.location.reload()`) to `LoadingOverlay`, `Sidebar`, and `ChatPanel` in `app/page.tsx`
 
 ---
 
@@ -106,8 +116,8 @@
 
 ### Implementation for User Story 5
 
-- [x] T019 [US5] Implement `InterruptCard` inline UI component in `components/MessageList.tsx`
-- [x] T020 [US5] Implement `POST /chat/resume` submission logic on Yes/No click in `components/MessageList.tsx`
+- [x] T019 [US5] Implement `HitlConfirmation` inline UI component in `components/HitlConfirmation.tsx` and `components/MessageLog.tsx`
+- [x] T020 [US5] Implement `POST /chat/resume` submission logic on Yes/No click in `components/HitlConfirmation.tsx` and `lib/conversation/useConversation.ts`
 - [x] T021 [US5] Implement UI state update to disable main input when interrupt is pending in `components/ChatInput.tsx`
 
 ---
@@ -126,7 +136,7 @@
 
 - [x] T022 [US6] Modify Send button to render as Stop button when `isStreaming` is true in `components/ChatInput.tsx`
 - [x] T023 [US6] Add `Escape` key listener for stop action in `components/ChatInput.tsx`
-- [x] T024 [US6] Implement `POST /chat/stop` API call and append "(Stopped)" indicator in `components/MessageList.tsx`
+- [x] T024 [US6] Implement `POST /chat/stop` API call and append "(Stopped)" indicator in `components/MessageLog.tsx` and `lib/conversation/useConversation.ts`
 - [x] T024a [US6] Implement logic to re-enable input and restore user prompt if stream fails in `components/ChatInput.tsx`
 
 ---
@@ -164,9 +174,9 @@
 
 - [x] T030 [US8] Integrate `New Chat` button `POST /threads` click handler in `components/Sidebar.tsx`
 - [x] T030a [US8] Integrate submit handler to append newly created thread to sidebar only after first message is sent in `components/Sidebar.tsx`
-- [x] T031 [US8] Implement `GET /history/{thread_id}` fetch logic on item click in `app/page.tsx`
-- [x] T032 [US8] Display skeleton loader or spinner in main chat area during history load in `components/MessageList.tsx`
-- [x] T033 [US8] Implement auto-scroll to bottom upon successful history render in `components/MessageList.tsx`
+- [x] T031 [US8] Implement `GET /history/{thread_id}` fetch logic on item click in `app/page.tsx` and `lib/conversation/useConversation.ts`
+- [x] T032 [US8] Display skeleton loader or spinner in main chat area during history load in `components/ChatPanel.tsx`
+- [x] T033 [US8] Implement auto-scroll to bottom upon successful history render in `components/MessageLog.tsx`
 
 ---
 
@@ -178,6 +188,8 @@
 - [x] T035 Review CSS transitions to ensure strictly 60fps compositor thread properties
 - [x] T036 Run quickstart.md validation manually
 - [x] T037 [P] Clean up any mock/stub data used during Phase 2
+- [x] T048 [P] Update E2E and mock backend fixtures to handle `GET /health/ready` and verify startup readiness gating in `tests/fixtures/mock-backend.ts` and `tests/e2e/message-input.spec.ts`
+- [x] T049 Run full Vitest unit and component test suite to validate readiness polling, startup gating, and retry flows in `tests/`
 
 ---
 
@@ -197,7 +209,7 @@
 - **User Story 1 (P1)**: Can start after Foundational (Phase 2)
 - **User Story 2 (P1)**: Depends on User Story 1 (requires base ChatInput layout)
 - **User Story 3 (P2)**: Depends on User Story 2 (requires morphing state to test retention)
-- **User Story 4 (P1)**: Independent. Can start after Foundational.
+- **User Story 4 (P1)**: Independent. Within US4 readiness tasks: `T041` (`lib/conversation/backend-readiness.ts`) → `T042` (`lib/conversation/backend.ts`) → `T043` (`lib/conversation/useConversation.ts`) → `T047` (`app/page.tsx`). Component prop tasks `T044`, `T045`, and `T046` can run in parallel with `T041`–`T043`.
 - **User Story 5 (P1)**: Independent. Can start after Foundational.
 - **User Story 6 (P1)**: Depends on User Story 1 (requires Send button)
 - **User Story 7 (P1)**: Independent. Modifies `Sidebar.tsx`.
@@ -205,7 +217,27 @@
 
 ### Parallel Opportunities
 
-- Phase 6 (US4), Phase 7 (US5), Phase 9 (US7) can run completely in parallel with the `ChatInput` phases (US1-3, US6) since they affect different areas of the application (`Sidebar.tsx`, `page.tsx`).
+- Phase 6 (US4), Phase 7 (US5), Phase 9 (US7) can run in parallel with the `ChatInput` phases (US1-3, US6).
+- Within User Story 4 (Readiness Check):
+  - Test tasks `T038`, `T039`, and `T040` can be authored in parallel.
+  - Implementation tasks `T041` (`lib/conversation/backend-readiness.ts`), `T044` (`components/Sidebar.tsx`), `T045` (`components/MessageInput.tsx` / `components/ChatPanel.tsx`), and `T046` (`components/LoadingOverlay.tsx`) touch disjoint files and can be executed in parallel.
+
+---
+
+## Parallel Example: User Story 4 (Backend Readiness Check)
+
+```bash
+# Launch unit & component test tasks for User Story 4 in parallel:
+Task: "T038 [P] [US4] Add unit tests for waitForBackendReady in tests/unit/backend-readiness.test.ts"
+Task: "T039 [P] [US4] Add unit tests for two-phase startup orchestration in tests/unit/useConversation.test.ts"
+Task: "T040 [P] [US4] Add component tests for startup request gating in tests/components/Sidebar.test.tsx, tests/components/MessageInput.test.tsx, and tests/components/LoadingOverlay.test.tsx"
+
+# Launch independent module & component readiness gating tasks in parallel:
+Task: "T041 [P] [US4] Implement waitForBackendReady and BackendReadinessError in lib/conversation/backend-readiness.ts"
+Task: "T044 [P] [US4] Gate initial GET /conversations fetch on isBackendReady prop in components/Sidebar.tsx"
+Task: "T045 [P] [US4] Gate initial POST /models fetch on isBackendReady prop in components/MessageInput.tsx"
+Task: "T046 [P] [US4] Update LoadingOverlay timeout handling in components/LoadingOverlay.tsx"
+```
 
 ---
 

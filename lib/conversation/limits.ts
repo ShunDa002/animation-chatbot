@@ -18,7 +18,8 @@ export type MessageStatus =
   | 'error';
 
 export type MessageAuthor = 'visitor' | 'character';
-export type InterruptDecision = 'yes' | 'no';
+
+export type InterruptDecision = 'yes' | 'no' | boolean | Record<string, unknown>;
 
 export interface Message {
   id: string;
@@ -41,7 +42,10 @@ export function atCharacterLimit(current: string): boolean {
   return current.length >= MAX_INPUT_CHARACTERS;
 }
 
-/** Clamp a draft to the cap. */
+/**
+ * Clamp a draft to the cap. Used by the input's change handler so typing simply stops, rather than
+ * the visitor writing 400 characters and losing 100 of them at send time (FR-022).
+ */
 export function clampInput(value: string): string {
   return value.length <= MAX_INPUT_CHARACTERS ? value : value.slice(0, MAX_INPUT_CHARACTERS);
 }

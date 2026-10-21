@@ -1,0 +1,2 @@
+import{n as e,t}from"./root-params-DpzfaQmo.js";async function n(n){let r=t(n.params,n.rootParamNamesByPattern[n.pattern]);return e(r,()=>n.fn(n.rejectEmptyResults?{params:n.params,rejectEmptyResults:!0}:{params:n.params}))}export{n as t};
+//# sourceMappingURL=app-prerender-static-params-CCzCVFpK.js.map

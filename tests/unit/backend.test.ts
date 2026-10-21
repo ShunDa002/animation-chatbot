@@ -98,6 +98,26 @@ describe('lib/conversation/backend', () => {
 
       await expect(createThread()).rejects.toThrow('Failed to fetch');
     });
+
+    it('attaches AbortSignal when signal or timeoutMs is provided (T042, FR-017)', async () => {
+      process.env.NEXT_PUBLIC_BACKEND_URL = 'http://127.0.0.1:8000';
+      const mockUuid = 'thread-with-signal-123';
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(mockUuid),
+      } as unknown as Response);
+      globalThis.fetch = fetchMock;
+
+      const controller = new AbortController();
+      const threadId = await createThread({ signal: controller.signal, timeoutMs: 10000 });
+
+      expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:8000/threads', {
+        method: 'POST',
+        signal: expect.any(AbortSignal),
+      });
+      expect(threadId).toBe(mockUuid);
+    });
   });
 
   describe('sendMessage', () => {

@@ -1,0 +1,2 @@
+import{n as e}from"./react-1cso1KEy.js";import{t}from"../../index.js";var n=e((e=>{var n=t();e.version=n.version,e.prerender=n.prerender,e.resumeAndPrerender=n.resumeAndPrerender}));export default n();
+//# sourceMappingURL=static.edge-Ecj_PjJ1.js.map

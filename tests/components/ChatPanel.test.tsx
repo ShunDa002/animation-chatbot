@@ -24,6 +24,8 @@ function mockConversation(overrides: Partial<Conversation> = {}): Conversation {
     inFlight: false,
     notice: null,
     announcement: null,
+    isBackendReady: true,
+    retryStartup: vi.fn(),
     send: vi.fn(),
     resume: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),

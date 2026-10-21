@@ -1,6 +1,17 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('Message Input UI - E2E Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    // Default readiness route to return 200 OK
+    await page.route('**/health/ready', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ready' }),
+      });
+    });
+  });
+
   test('T015a [US4]: Full-page loading and timeout retry', async ({ page }) => {
     // Intercept /threads to delay response
     let resolveThread: () => void;
@@ -161,5 +172,57 @@ test.describe('Message Input UI - E2E Tests', () => {
     await expect(emptyNotice).not.toBeVisible();
     const newConvItem = page.locator('aside[aria-label="Sidebar"]').getByRole('button', { name: /First message in new thread/i });
     await expect(newConvItem).toBeVisible();
+  });
+
+  test('T048 [US4]: Startup readiness check gates /threads and /conversations until ready', async ({ page }) => {
+    let threadRequested = false;
+    let conversationsRequested = false;
+    let resolveReadiness!: () => void;
+
+    // Override health/ready to remain pending
+    await page.route('**/health/ready', async (route) => {
+      await new Promise<void>((resolve) => {
+        resolveReadiness = resolve;
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ready' }),
+      });
+    });
+
+    await page.route('**/threads', async (route) => {
+      threadRequested = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'thread-readiness-test', createdAt: new Date().toISOString() }),
+      });
+    });
+
+    await page.route('**/conversations', async (route) => {
+      conversationsRequested = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    });
+
+    await page.goto('/');
+
+    const loadingOverlay = page.locator('.loading-overlay');
+    await expect(loadingOverlay).toBeVisible();
+
+    // Verify neither threads nor conversations have been requested yet
+    expect(threadRequested).toBe(false);
+    expect(conversationsRequested).toBe(false);
+
+    // Now resolve readiness
+    resolveReadiness();
+
+    // After readiness succeeds, thread is created and loading overlay fades out
+    await expect(loadingOverlay).toHaveClass(/opacity-0/, { timeout: 10000 });
+    expect(threadRequested).toBe(true);
   });
 });

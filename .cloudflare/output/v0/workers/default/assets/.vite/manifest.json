@@ -1,0 +1,128 @@
+{
+  "_framework-ChI052Ff.js": {
+    "file": "_next/static/chunks/framework-ChI052Ff.js",
+    "name": "framework",
+    "imports": [
+      "_rolldown-runtime-XKyaHtl9.js"
+    ]
+  },
+  "_lib-2xhxjszH.js": {
+    "file": "_next/static/chunks/lib-2xhxjszH.js",
+    "name": "lib",
+    "imports": [
+      "_rolldown-runtime-XKyaHtl9.js"
+    ]
+  },
+  "_rolldown-runtime-XKyaHtl9.js": {
+    "file": "_next/static/chunks/rolldown-runtime-XKyaHtl9.js",
+    "name": "rolldown-runtime"
+  },
+  "_vinext-aVUsKUij.js": {
+    "file": "_next/static/chunks/vinext-aVUsKUij.js",
+    "name": "vinext",
+    "imports": [
+      "_rolldown-runtime-XKyaHtl9.js",
+      "_framework-ChI052Ff.js"
+    ],
+    "dynamicImports": [
+      "_vinext-aVUsKUij.js"
+    ]
+  },
+  "app/page.tsx": {
+    "file": "_next/static/chunks/page-CtVCrlXe.js",
+    "name": "page",
+    "src": "app/page.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-XKyaHtl9.js",
+      "_framework-ChI052Ff.js",
+      "_vinext-aVUsKUij.js"
+    ],
+    "dynamicImports": [
+      "components/CharacterStage.tsx"
+    ]
+  },
+  "components/CharacterStage.tsx": {
+    "file": "_next/static/chunks/CharacterStage-C5s37yOa.js",
+    "name": "CharacterStage",
+    "src": "components/CharacterStage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-XKyaHtl9.js",
+      "_framework-ChI052Ff.js",
+      "_vinext-aVUsKUij.js",
+      "app/page.tsx"
+    ],
+    "dynamicImports": [
+      "node_modules/pixi.js/lib/index.mjs",
+      "node_modules/pixi-live2d-display/dist/cubism2.es.js",
+      "node_modules/pixi-live2d-display/dist/cubism4.es.js"
+    ]
+  },
+  "node_modules/pixi-live2d-display/dist/cubism2.es.js": {
+    "file": "_next/static/chunks/cubism2.es-DsDK8uau.js",
+    "name": "cubism2.es",
+    "src": "node_modules/pixi-live2d-display/dist/cubism2.es.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_lib-2xhxjszH.js"
+    ]
+  },
+  "node_modules/pixi-live2d-display/dist/cubism4.es.js": {
+    "file": "_next/static/chunks/cubism4.es-CgC_YHgX.js",
+    "name": "cubism4.es",
+    "src": "node_modules/pixi-live2d-display/dist/cubism4.es.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_lib-2xhxjszH.js"
+    ]
+  },
+  "node_modules/pixi.js/lib/index.mjs": {
+    "file": "_next/static/chunks/lib-DA4gSekH.js",
+    "name": "lib",
+    "src": "node_modules/pixi.js/lib/index.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_lib-2xhxjszH.js"
+    ]
+  },
+  "node_modules/vinext/dist/shims/layout-segment-context.js": {
+    "file": "_next/static/chunks/layout-segment-context-dVSBhmnA.js",
+    "name": "layout-segment-context",
+    "src": "node_modules/vinext/dist/shims/layout-segment-context.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-XKyaHtl9.js",
+      "_framework-ChI052Ff.js",
+      "_vinext-aVUsKUij.js"
+    ]
+  },
+  "node_modules/vinext/dist/shims/script.js": {
+    "file": "_next/static/chunks/script-CqsJKn5c.js",
+    "name": "script",
+    "src": "node_modules/vinext/dist/shims/script.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-XKyaHtl9.js",
+      "_framework-ChI052Ff.js",
+      "_vinext-aVUsKUij.js"
+    ]
+  },
+  "virtual:vinext-app-browser-entry": {
+    "file": "_next/static/chunks/index-4Fbiv0E5.js",
+    "name": "index",
+    "src": "virtual:vinext-app-browser-entry",
+    "isEntry": true,
+    "imports": [
+      "_rolldown-runtime-XKyaHtl9.js",
+      "_framework-ChI052Ff.js",
+      "_vinext-aVUsKUij.js"
+    ],
+    "dynamicImports": [
+      "_vinext-aVUsKUij.js",
+      "node_modules/vinext/dist/shims/layout-segment-context.js",
+      "node_modules/vinext/dist/shims/script.js",
+      "app/page.tsx"
+    ]
+  }
+}

@@ -30,9 +30,7 @@ export default function Page() {
   };
 
   const handleRetryConnection = () => {
-    if (typeof window !== 'undefined') {
-      window.location.reload();
-    }
+    conversation.retryStartup();
   };
 
   const isInitialError = !conversation.threadId && conversation.status === 'error';
@@ -40,13 +38,14 @@ export default function Page() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg)] relative">
       <LoadingOverlay
-        isConnecting={conversation.status === 'connecting'}
-        isGeneratingThread={!conversation.threadId && conversation.status !== 'error'}
+        isConnecting={conversation.status === 'connecting' || !conversation.isBackendReady}
+        isGeneratingThread={conversation.isBackendReady && !conversation.threadId && conversation.status !== 'error'}
         error={isInitialError ? (conversation.notice ?? 'Connection failed.') : null}
         onRetry={handleRetryConnection}
       />
       {/* Sidebar (left panel on desktop/tablet, off-canvas drawer on mobile) */}
       <Sidebar
+        isBackendReady={conversation.isBackendReady}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         isCollapsed={isSidebarCollapsed}
@@ -95,7 +94,7 @@ export default function Page() {
           />
 
           {/* Chat Panel: Overlays bottom 50% of the character area with transparent background */}
-          <ChatPanel conversation={conversation} />
+          <ChatPanel conversation={conversation} isBackendReady={conversation.isBackendReady} />
         </div>
       </main>
     </div>

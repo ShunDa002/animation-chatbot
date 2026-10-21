@@ -20,6 +20,7 @@ const PORT = Number(process.argv[2] ?? process.env.BACKEND_PORT ?? 4319);
 let quotaCount = 0;
 let storeDown = false;
 let threadFail = false;
+let readyFail = false;
 
 function setCorsHeaders(res: ServerResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -200,10 +201,15 @@ const server = createServer((req, res) => {
         threadFail = segments[2] === '1';
         json(res, 200, { ok: true, threadFail });
         return;
+      case 'ready-fail':
+        readyFail = segments[2] === '1';
+        json(res, 200, { ok: true, readyFail });
+        return;
       case 'reset':
         quotaCount = 0;
         storeDown = false;
         threadFail = false;
+        readyFail = false;
         json(res, 200, { ok: true });
         return;
       case 'health':
@@ -260,6 +266,19 @@ async function handleStop(req: IncomingMessage, res: ServerResponse): Promise<vo
 
   json(res, 200, { ok: true, status: 'stopped', thread_id: parsed?.thread_id, run_id: parsed?.run_id });
 }
+
+  if (segments[0] === 'health') {
+    if (segments[1] === 'ready') {
+      if (readyFail || storeDown) {
+        json(res, 503, { status: 'not_ready', error: 'Database initializing' });
+        return;
+      }
+      json(res, 200, { status: 'ready' });
+      return;
+    }
+    json(res, 200, { ok: true });
+    return;
+  }
 
   if (segments[0] === 'threads') {
     void handleThreads(req, res);

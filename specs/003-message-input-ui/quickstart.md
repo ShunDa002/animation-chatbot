@@ -36,13 +36,27 @@ This guide describes how to validate the interactive message input and new chat 
 3. Click the Stop button OR press `Escape`.
 4. **Observe:** The stream stops immediately, a `POST /chat/stop` request is fired, and "(Stopped)" is appended to the message.
 
+## Scenario 4: Backend Readiness Check & Startup Retry
+
+**Steps:**
+1. Start the frontend while the backend is either stopped or returning `503 Service Unavailable` on `GET /health/ready`.
+2. Open the application in a browser and inspect the Network tab.
+3. **Observe:** The white loading page (`public/assets/loader.gif`) remains visible while `GET /health/ready` is polled with exponential backoff + jitter. Neither `POST /threads`, `GET /conversations`, nor `POST /models` is called while `/health/ready` is pending.
+4. Start the backend (or make `GET /health/ready` return `200 OK`).
+5. **Observe:** Polling stops immediately on the first `200 OK`, `POST /threads` (with a 10s timeout), `GET /conversations`, and `POST /models` are triggered, and once `threadId` returns, the loading overlay smoothly fades out.
+6. Simulate a permanent `404` on `GET /health/ready` (or let the 120s readiness deadline / 10s `POST /threads` timeout expire).
+7. **Observe:** Polling stops and the loading page displays a generic error message (with no HTTP status code) and a "Retry" button. Clicking "Retry" restarts the sequence from `GET /health/ready` with a fresh 120s deadline.
+
 ## Automated Validation
 
-Run the component and E2E tests to validate these scenarios automatically:
+Run the unit, component, and E2E tests to validate these scenarios automatically:
 
 ```bash
-# Run component tests for the morphing logic
-npm run test ChatInput.test.tsx
+# Run unit tests for backend readiness polling, backoff, timeouts, and startup gating
+npm run test tests/unit/backend-readiness.test.ts tests/unit/useConversation.test.ts
+
+# Run component tests for the morphing logic and loading overlay
+npm run test ChatInput.test.tsx LoadingOverlay.test.tsx
 
 # Run E2E tests for the chat and sidebar flows
 npx playwright test e2e/message-input.spec.ts

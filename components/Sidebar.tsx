@@ -36,6 +36,8 @@ export interface SidebarProps {
   onSelectConversation?: (id: string, threadId?: string) => void;
   /** Currently active thread ID */
   activeThreadId?: string | null;
+  /** When false during startup, holds back GET /conversations and renders skeleton loader (FR-040) */
+  isBackendReady?: boolean;
   /** Optional class name */
   className?: string;
 }
@@ -75,6 +77,7 @@ export default function Sidebar({
   onNewChat,
   onSelectConversation,
   activeThreadId,
+  isBackendReady = true,
   className = '',
 }: SidebarProps) {
   const [internalConversations, setInternalConversations] = useState<ConversationItem[]>([]);
@@ -82,15 +85,21 @@ export default function Sidebar({
   const [internalError, setInternalError] = useState<string | null>(null);
   const [retryTrigger, setRetryTrigger] = useState(0);
 
-  // Fetch dynamic conversations from GET /conversations if not provided via props
+  // Fetch dynamic conversations from GET /conversations if not provided via props and backend is ready
   useEffect(() => {
     if (controlledConversations !== undefined) {
+      return;
+    }
+
+    if (!isBackendReady) {
+      setInternalLoading(true);
       return;
     }
 
     const abortController = new AbortController();
 
     async function load() {
+      setInternalLoading(true);
       try {
         const data = await fetchConversations(abortController.signal);
         setInternalConversations(data);
@@ -108,7 +117,7 @@ export default function Sidebar({
     return () => {
       abortController.abort();
     };
-  }, [controlledConversations, retryTrigger]);
+  }, [controlledConversations, retryTrigger, isBackendReady]);
 
   // Listen for newly created conversation on first message sent (FR-038, T030a)
   useEffect(() => {
@@ -143,7 +152,12 @@ export default function Sidebar({
     setRetryTrigger((prev) => prev + 1);
   };
 
-  const effectiveLoading = controlledLoading !== undefined ? controlledLoading : (controlledConversations !== undefined ? false : internalLoading);
+  const effectiveLoading =
+    controlledLoading !== undefined
+      ? controlledLoading
+      : controlledConversations !== undefined
+        ? false
+        : !isBackendReady || internalLoading;
   const effectiveError = controlledError !== undefined ? controlledError : (controlledConversations !== undefined ? null : internalError);
   const effectiveList = controlledConversations !== undefined ? controlledConversations : internalConversations;
 

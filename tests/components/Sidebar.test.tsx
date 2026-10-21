@@ -209,4 +209,37 @@ describe('Sidebar - User Story 7 (Sidebar Conversations Fetching)', () => {
     );
     expect(btn.getAttribute('aria-current')).toBeNull();
   });
+
+  it('gates GET /conversations when isBackendReady is false, displaying skeleton until ready (FR-040)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [
+        {
+          id: 'conv-gated',
+          title: 'Gated Chat',
+          createdAt: '2026-10-08T10:00:00Z',
+        },
+      ],
+    });
+    globalThis.fetch = fetchMock;
+
+    const { rerender } = render(<Sidebar isBackendReady={false} />);
+
+    // While backend is not ready, skeleton is displayed and no network call is dispatched
+    expect(screen.getByTestId('sidebar-skeleton')).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Backend becomes ready
+    rerender(<Sidebar isBackendReady={true} />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Gated Chat')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('sidebar-skeleton')).toBeNull();
+  });
 });

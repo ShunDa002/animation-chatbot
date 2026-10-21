@@ -5,6 +5,13 @@
  * All backend configuration is via NEXT_PUBLIC_BACKEND_URL.
  */
 
+export {
+  waitForBackendReady,
+  BackendReadinessError,
+  type ReadinessOptions,
+  type ReadinessResult,
+} from './backend-readiness';
+
 const DEFAULT_BACKEND_URL = 'http://127.0.0.1:8000';
 
 /**
@@ -19,30 +26,62 @@ export function getBackendUrl(): string {
   return envUrl.trim().replace(/\/+$/, '');
 }
 
+export interface CreateThreadOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
 /**
- * Creates a new conversation thread on the backend (FR-043).
+ * Creates a new conversation thread on the backend (FR-043, API-008).
  * Returns the UUID string assigned to this thread.
- * Throws on non-200 response or network error.
+ * Throws on non-200 response, timeout, or network error.
  */
-export async function createThread(): Promise<string> {
+export async function createThread(
+  signalOrOptions?: AbortSignal | CreateThreadOptions,
+): Promise<string> {
   const backendUrl = getBackendUrl();
-  const response = await fetch(`${backendUrl}/threads`, {
+  const signal = signalOrOptions instanceof AbortSignal ? signalOrOptions : signalOrOptions?.signal;
+  const timeoutMs = signalOrOptions instanceof AbortSignal ? undefined : signalOrOptions?.timeoutMs;
+
+  const hasTimeout = typeof timeoutMs === 'number' && timeoutMs > 0;
+  let controller: AbortController | undefined;
+  let timer: NodeJS.Timeout | null = null;
+  const abortCurrent = () => controller?.abort();
+
+  if (signal || hasTimeout) {
+    controller = new AbortController();
+    signal?.addEventListener('abort', abortCurrent, { once: true });
+    if (hasTimeout) {
+      timer = setTimeout(() => controller?.abort(), timeoutMs);
+    }
+  }
+
+  const init: RequestInit = {
     method: 'POST',
-  });
-
-  if (!response.ok) {
-    throw new Error(`Thread creation failed with status ${response.status}`);
+  };
+  if (controller) {
+    init.signal = controller.signal;
   }
 
-  console.log(await response);
-  const rawText = await response.text();
-  const threadId = rawText.replace(/^"|"$/g, '').trim();
+  try {
+    const response = await fetch(`${backendUrl}/threads`, init);
 
-  if (!threadId) {
-    throw new Error('Received empty thread id from backend');
+    if (!response.ok) {
+      throw new Error(`Thread creation failed with status ${response.status}`);
+    }
+
+    const rawText = await response.text();
+    const threadId = rawText.replace(/^"|"$/g, '').trim();
+
+    if (!threadId) {
+      throw new Error('Received empty thread id from backend');
+    }
+
+    return threadId;
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+    signal?.removeEventListener('abort', abortCurrent);
   }
-
-  return threadId;
 }
 
 export interface SendMessageOptions {
@@ -135,7 +174,7 @@ export async function stopChat(
   signal?: AbortSignal,
 ): Promise<Response> {
   const backendUrl = getBackendUrl();
-  return fetch(`${backendUrl}/chat/stop`, {
+  const init: RequestInit = {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -144,8 +183,11 @@ export async function stopChat(
       thread_id: threadId,
       run_id: runId ?? null,
     }),
-    signal,
-  });
+  };
+  if (signal) {
+    init.signal = signal;
+  }
+  return fetch(`${backendUrl}/chat/stop`, init);
 }
 
 /**
@@ -257,4 +299,3 @@ export async function fetchHistory(threadId: string, signal?: AbortSignal): Prom
   }
   return [];
 }
-
