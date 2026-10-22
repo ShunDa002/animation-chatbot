@@ -233,11 +233,11 @@ async function handleRagUpload(req: IncomingMessage, res: ServerResponse): Promi
 
   // Extract thread_id
   const threadIdMatch = raw.match(/name="thread_id"(?:;[^\r\n]*)?\r?\n\r?\n([^\r\n]+)/);
-  const threadId = threadIdMatch ? threadIdMatch[1].trim() : '';
+  const threadId = threadIdMatch && threadIdMatch[1] ? threadIdMatch[1].trim() : '';
 
   // Extract filename
   const filenameMatch = raw.match(/filename="([^"]+)"/);
-  const filename = filenameMatch ? filenameMatch[1].trim() : 'uploaded-doc.pdf';
+  const filename = filenameMatch && filenameMatch[1] ? filenameMatch[1].trim() : 'uploaded-doc.pdf';
 
   if (!threadId) {
     text(res, 400, 'Missing or empty thread_id');

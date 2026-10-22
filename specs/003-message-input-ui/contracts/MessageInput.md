@@ -32,3 +32,27 @@
 | `onRetry` | `() => void` | No | Callback when the "Retry" button is clicked; restarts the full startup sequence from `GET /health/ready` with a fresh 120s deadline (FR-041). |
 | `error` | `string \| null` | Yes | Generic, actionable error message when readiness (120s deadline or permanent `4xx`) or thread creation (10s timeout or error) fails. Never contains raw HTTP status codes (FR-017). |
 | `timeoutMs` | `number` | Yes | Optional safety fallback timeout override (defaults to `130000` ms when not controlled by the startup coordinator, or remains configurable for isolated component tests). |
+
+## UI Contract: Attachment Dropdown & Document Pill
+
+### Dropdown Menu (Triggered by Attachment `+` Button)
+- **Positioning**: Floats directly above the Attachment (`+`) button when clicked.
+- **Options**:
+  1. `Browse files`: Triggers the browser's hidden file input (`accept=".pdf,.txt,.md,.docx"`).
+  2. Horizontal divider line (`border-t border-[#2d3142]`).
+  3. `resume.pdf`: Loads `/resume.pdf` as a blob/File and begins upload immediately.
+- **Dismissal**: Closes automatically when an option is selected, when clicked outside, or on `Escape`.
+
+### Sticky Document Pill (Stacked atop Message Input)
+- **Positioning**: Stacked directly above the outer top border of the message input container (`mb-1.5` / `mb-2`), left-aligned, moving upward with composer auto-expansion.
+- **Contents**:
+  - File icon / format indicator (`PDF`, `TXT`, `MD`, `DOCX`).
+  - File name string (e.g., `resume.pdf`).
+  - In-flight spinner / progress indicator during `uploading` / `processing`.
+  - Cancel button (`X`) with accessible `aria-label`.
+- **States**:
+  - Normal/Ready: Dark pill with subtle border and white text.
+  - Alert/Error: Alert accent (red border/badge) with concise error tooltip and cancel/dismiss button.
+- **Attachment Button Gating**: When a document is active or uploading in the pill, the Attachment (`+`) button is disabled (`aria-disabled="true"`, opacity reduced, cursor not-allowed) with tooltip: *"Cancel existing document to upload another file"*.
+- **Cancel Button Behavior**: Clicking the cancel button aborts in-flight uploads, clears the pill, resets state to `idle`, and re-enables the Attachment (`+`) button.
+

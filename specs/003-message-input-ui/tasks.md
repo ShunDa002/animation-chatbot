@@ -180,27 +180,27 @@
 
 ---
 
-## Phase 11: User Story 9 - RAG Document Upload via Attachment Button (Priority: P1)
+## Phase 11: User Story 9 - RAG Document Upload via Attachment Dropdown and Sticky Pill (Priority: P1)
 
-**Goal**: A user clicks the Attachment (`+`) button inside `MessageInput` to open an inline upload panel, selects or drops a `.pdf`, `.txt`, `.md`, or `.docx` file up to `3 MB`, reviews its summary, uploads it to `POST /rag/upload` with distinct `Uploading` and `Processing` feedback, and receives `Ready`, informational `Already Added` (duplicate content), or `Failed` (with **Retry**) status scoped to the active `threadId`.
+**Goal**: Replace the current RAG Document Upload panel with a clean two-option dropdown menu (`Browse files` and `resume.pdf` separated by a divider line), immediately upload upon selection, display the active document in a sticky pill stacked directly above the top of the message input container with a cancel button, enforce a single active document restriction (disabling the Attachment button while a file is active/uploading), and allow instant cancellation/removal.
 
-**Independent Test**: Clicking the Attachment (`+`) button toggles the inline upload panel. Invalid files (`0` bytes, unsupported extension, `> 3 MB`) are rejected client-side with zero network calls. Valid files transition `Selected` → `Uploading` (`Uploading document...`) → `Processing` (`Preparing document for use...`) → `Ready` or `Already Added` (or `Failed` with **Retry**), while disabling chat `Send` during `Uploading`/`Processing` and isolating state per `threadId`.
+**Independent Test**: Clicking Attachment opens the dropdown menu with `Browse files` and `resume.pdf` separated by a divider. Selecting either option immediately begins upload and renders the sticky pill atop the message input. While attached, the Attachment button is disabled with an explanatory tooltip. Clicking the pill's cancel button clears the attachment, aborts any in-flight request, and re-enables the Attachment button.
 
 ### Tests for User Story 9
 
-- [x] T050 [P] [US9] Add unit tests for RAG file validation (`validateRagFile`, `formatFileSize`, `.pdf`/`.txt`/`.md`/`.docx` allowlist, `0`-byte and `> 3 MB` rejection, missing `threadId`) in `tests/unit/limits.test.ts`
-- [x] T051 [P] [US9] Add unit tests for `uploadRagDocument` (`POST /rag/upload` `FormData` fields, `Uploading` progress and `upload.onload` `Processing` callback, `ready` vs. `already_added` duplicate mapping, and safe error translation) in `tests/unit/backend.test.ts`
-- [x] T052 [P] [US9] Add component tests for the Attachment (`+`) inline RAG upload panel (panel toggle, file picker & drag-and-drop selection, client-side validation errors, `Uploading` → `Processing` → `Ready` / `Already Added` / `Failed` states, chat `Send` disabled while uploading/processing, retry/replace/remove actions, and per-`threadId` state isolation) in `tests/components/MessageInput.test.tsx`
+- [x] T060 [P] [US9] Add unit tests for `loadSampleResumeFile` and upload abort handling in `tests/unit/backend.test.ts`
+- [x] T061 [US9] Update component tests for dropdown menu display, `Browse files` and `resume.pdf` selection, immediate upload, sticky document pill rendering, single-file disabled attachment button, cancel button abort and reset, and failure alert state in `tests/components/MessageInput.test.tsx`
 
 ### Implementation for User Story 9
 
-- [x] T053 [P] [US9] Add centralized RAG document upload copy tokens (panel guidance, status strings, action labels, and validation/error messages) in `lib/ui/copy.ts`
-- [x] T054 [US9] Implement `MAX_RAG_FILE_BYTES` (`3 MB`), `ALLOWED_RAG_EXTENSIONS` (`.pdf`, `.txt`, `.md`, `.docx`), `formatFileSize`, and `validateRagFile` in `lib/conversation/limits.ts`
-- [x] T055 [P] [US9] Implement `uploadRagDocument`, `RagUploadError`, `UploadRagDocumentOptions`, and `RagUploadResult` for `POST /rag/upload` using `XMLHttpRequest` (`upload.onprogress` and `upload.onload` transitions) in `lib/conversation/backend.ts`
-- [x] T056 [US9] Implement the Attachment (`+`) button toggle, inline RAG upload panel (file picker, drag-and-drop dropzone, file summary card, **Upload**/**Replace**/**Remove**/**Retry**/**Dismiss** actions, `role="status"` announcements), chat `Send` gating during `Uploading`/`Processing`, and per-`threadId` state dictionary in `components/MessageInput.tsx`
-- [x] T057 [US9] Pass active `threadId` prop from `ChatPanel` into `MessageInput` in `components/ChatPanel.tsx`
+- [x] T062 [P] [US9] Update centralized copy tokens for dropdown options (`Browse files`, `resume.pdf`), pill cancel label, single-file disabled tooltip, and alert status in `lib/ui/copy.ts`
+- [x] T063 [P] [US9] Implement `loadSampleResumeFile` helper to fetch `/resume.pdf` as a `File` object in `lib/conversation/backend.ts`
+- [x] T064 [US9] Replace the inline upload panel with a floating dropdown menu anchored above the Attachment (`+`) button displaying `Browse files` and `resume.pdf` separated by a divider line in `components/MessageInput.tsx`
+- [x] T065 [US9] Implement the sticky document pill stacked directly above the outer top border of the composer container displaying file name, in-flight progress/spinner, cancel button (`X`), and alert/error styling in `components/MessageInput.tsx`
+- [x] T066 [US9] Wire immediate upload upon selection of `Browse files` or `resume.pdf` and wire the cancel button to abort in-flight uploads via `AbortController` and clear active state in `components/MessageInput.tsx`
+- [x] T067 [US9] Enforce single active document restriction by disabling the Attachment (`+`) button with tooltip and reduced opacity while a document is active or uploading in `components/MessageInput.tsx`
 
-**Checkpoint**: At this point, User Story 9 (RAG Document Upload) should be fully functional and independently testable
+**Checkpoint**: At this point, User Story 9 (RAG Dropdown and Sticky Pill) should be fully functional and independently testable.
 
 ---
 
@@ -214,8 +214,8 @@
 - [x] T037 [P] Clean up any mock/stub data used during Phase 2
 - [x] T048 [P] Update E2E and mock backend fixtures to handle `GET /health/ready` and verify startup readiness gating in `tests/fixtures/mock-backend.ts` and `tests/e2e/message-input.spec.ts`
 - [x] T049 Run full Vitest unit and component test suite to validate readiness polling, startup gating, and retry flows in `tests/`
-- [x] T058 [P] Add mock `/rag/upload` endpoint support in `tests/fixtures/mock-backend.ts` and E2E test coverage for RAG document upload in `tests/e2e/message-input.spec.ts`
-- [x] T059 Run full Vitest unit and component test suite to validate RAG document upload and ensure zero regressions across `tests/`
+- [x] T068 [P] Update E2E test scenarios for RAG dropdown and sticky pill in `tests/e2e/message-input.spec.ts`
+- [x] T069 Run full Vitest unit and component test suite to ensure zero regressions across `tests/`
 
 ---
 
@@ -223,46 +223,28 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies - can start immediately
-- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories (Phase 3–11)**: All depend on Foundational phase completion
-  - User stories can then proceed in parallel (if staffed)
-  - Or sequentially in priority order (P1 → P2 → P3)
-- **Polish (Phase 12)**: Depends on all desired user stories being complete
+- **Setup (Phase 1)**: No dependencies - completed [x]
+- **Foundational (Phase 2)**: Depends on Setup completion - completed [x]
+- **User Stories (Phase 3–10)**: Completed [x]
+- **User Story 9 (Phase 11)**: Active phase - depends on foundational components and Attachment button in `MessageInput.tsx`
+- **Polish (Phase 12)**: Follows User Story 9 completion
 
-### User Story Dependencies
+### User Story 9 Dependencies
 
-- **User Story 1 (P1)**: Can start after Foundational (Phase 2)
-- **User Story 2 (P1)**: Depends on User Story 1 (requires base ChatInput layout)
-- **User Story 3 (P2)**: Depends on User Story 2 (requires morphing state to test retention)
-- **User Story 4 (P1)**: Independent. Within US4 readiness tasks: `T041` (`lib/conversation/backend-readiness.ts`) → `T042` (`lib/conversation/backend.ts`) → `T043` (`lib/conversation/useConversation.ts`) → `T047` (`app/page.tsx`). Component prop tasks `T044`, `T045`, and `T046` can run in parallel with `T041`–`T043`.
-- **User Story 5 (P1)**: Independent. Can start after Foundational.
-- **User Story 6 (P1)**: Depends on User Story 1 (requires Send button)
-- **User Story 7 (P1)**: Independent. Modifies `Sidebar.tsx`.
-- **User Story 8 (P1)**: Depends on User Story 7.
-- **User Story 9 (P1)**: Depends on User Story 1 (Attachment button inside `components/MessageInput.tsx`). Within US9: `T053` (`lib/ui/copy.ts`) → `T054` (`lib/conversation/limits.ts`) and `T055` (`lib/conversation/backend.ts`) → `T056` (`components/MessageInput.tsx`) → `T057` (`components/ChatPanel.tsx`).
+- `T062` (`lib/ui/copy.ts`) and `T063` (`lib/conversation/backend.ts`) can run in parallel.
+- `T060` (`tests/unit/backend.test.ts`) depends on `T063`.
+- `T064` (`components/MessageInput.tsx`) depends on `T062`.
+- `T065` (`components/MessageInput.tsx`) depends on `T064`.
+- `T066` (`components/MessageInput.tsx`) depends on `T063`, `T064`, and `T065`.
+- `T067` (`components/MessageInput.tsx`) depends on `T066`.
+- `T061` (`tests/components/MessageInput.test.tsx`) validates `T064`–`T067`.
+- Polish tasks `T068` and `T069` validate end-to-end integration across all suites.
 
 ### Parallel Opportunities
 
-- Phase 6 (US4), Phase 7 (US5), Phase 9 (US7), and Phase 11 (US9) can run in parallel with other phases.
-- Within User Story 9 (RAG Document Upload):
-  - Test tasks `T050` (`tests/unit/limits.test.ts`), `T051` (`tests/unit/backend.test.ts`), and `T052` (`tests/components/MessageInput.test.tsx`) touch disjoint files and can be authored in parallel.
-  - Implementation tasks `T053` (`lib/ui/copy.ts`) and `T055` (`lib/conversation/backend.ts`) can start in parallel; once `T053` finishes, `T054` (`lib/conversation/limits.ts`) and `T055` can run in parallel before `T056` (`components/MessageInput.tsx`).
-
----
-
-## Parallel Example: User Story 9 (RAG Document Upload)
-
-```bash
-# Launch unit & component test tasks for User Story 9 in parallel:
-Task: "T050 [P] [US9] Add unit tests for RAG file validation in tests/unit/limits.test.ts"
-Task: "T051 [P] [US9] Add unit tests for uploadRagDocument in tests/unit/backend.test.ts"
-Task: "T052 [P] [US9] Add component tests for the Attachment (+) inline RAG upload panel in tests/components/MessageInput.test.tsx"
-
-# Launch independent module implementation tasks in parallel:
-Task: "T053 [P] [US9] Add centralized RAG document upload copy tokens in lib/ui/copy.ts"
-Task: "T055 [P] [US9] Implement uploadRagDocument for POST /rag/upload in lib/conversation/backend.ts"
-```
+- Within User Story 9:
+  - `T060` (`tests/unit/backend.test.ts`), `T062` (`lib/ui/copy.ts`), and `T063` (`lib/conversation/backend.ts`) touch disjoint files and can execute in parallel.
+  - `T068` (E2E) and `T069` (unit/component suite) run in parallel during final verification.
 
 ---
 
@@ -270,17 +252,16 @@ Task: "T055 [P] [US9] Implement uploadRagDocument for POST /rag/upload in lib/co
 
 ### MVP First (User Story 1 Only)
 
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
-3. Complete Phase 3: User Story 1
-4. **STOP and VALIDATE**: Test User Story 1 independently
-5. Deploy/demo if ready
+1. Complete Phase 1: Setup (Done)
+2. Complete Phase 2: Foundational (Done)
+3. Complete Phase 3: User Story 1 (Done)
+4. Validated and functional.
 
-### Incremental Delivery
+### Incremental Delivery (User Story 9 Focus)
 
-1. Complete Setup + Foundational → Foundation ready
-2. Add User Story 1 (ChatInput Base) → Test independently
-3. Add User Story 2 & 3 (ChatInput Morph) → Test independently
-4. Add User Story 7 & 8 (Sidebar & History) → Test independently
-5. Add User Story 4, 5, 6 (Loading, HITL, Stop) → Test independently
-6. Add User Story 9 (RAG Document Upload on Attachment Button) → Test independently
+1. Add copy tokens and `loadSampleResumeFile` helper (`T062`, `T063`).
+2. Implement floating dropdown menu and sticky document pill in `MessageInput.tsx` (`T064`, `T065`).
+3. Connect immediate upload, cancellation abort, and single-file disabled button gating (`T066`, `T067`).
+4. Update unit and component test suites (`T060`, `T061`).
+5. Run full regression test suites (`T068`, `T069`).
+

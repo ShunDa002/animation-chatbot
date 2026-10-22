@@ -10,6 +10,7 @@ import {
   fetchConversations,
   fetchHistory,
   uploadRagDocument,
+  loadSampleResumeFile,
   RagUploadError,
 } from '@/lib/conversation/backend';
 import { copy } from '@/lib/ui/copy';
@@ -548,7 +549,9 @@ describe('lib/conversation/backend', () => {
       expect(createdXhr.setRequestHeader).toHaveBeenCalledWith('Accept', 'application/json');
       expect(createdXhr.send).toHaveBeenCalled();
 
-      const sentFormData = createdXhr.send.mock.calls[0][0] as FormData;
+      const firstCall = createdXhr.send.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      const sentFormData = (firstCall ? firstCall[0] : null) as FormData;
       expect(sentFormData.get('file')).toBe(file);
       expect(sentFormData.get('thread_id')).toBe('thread-123');
 
@@ -726,4 +729,47 @@ describe('lib/conversation/backend', () => {
       expect(createdXhr.abort).toHaveBeenCalled();
     });
   });
+
+  describe('loadSampleResumeFile', () => {
+    it('successfully loads /resume.pdf as a File object', async () => {
+      const mockBlob = new Blob(['sample pdf content'], { type: 'application/pdf' });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        blob: async () => mockBlob,
+      });
+
+      const file = await loadSampleResumeFile('/resume.pdf', mockFetch as unknown as typeof fetch);
+      expect(mockFetch).toHaveBeenCalledWith('/resume.pdf');
+      expect(file).toBeInstanceOf(File);
+      expect(file.name).toBe('resume.pdf');
+      expect(file.type).toBe('application/pdf');
+    });
+
+    it('throws error when the fetch request fails', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+      });
+
+      await expect(loadSampleResumeFile('/resume.pdf', mockFetch as unknown as typeof fetch)).rejects.toThrow(
+        'Failed to load sample resume from /resume.pdf: HTTP 404',
+      );
+    });
+
+    it('passes AbortSignal to fetchFn when provided', async () => {
+      const mockBlob = new Blob(['sample pdf content'], { type: 'application/pdf' });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        blob: async () => mockBlob,
+      });
+      const controller = new AbortController();
+
+      const file = await loadSampleResumeFile('/resume.pdf', mockFetch as unknown as typeof fetch, controller.signal);
+      expect(mockFetch).toHaveBeenCalledWith('/resume.pdf', { signal: controller.signal });
+      expect(file).toBeInstanceOf(File);
+    });
+  });
 });
+

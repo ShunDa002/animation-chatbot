@@ -59,3 +59,19 @@ Clicking "Retry" on `LoadingOverlay` invokes a `retryStartup()` callback in `use
 **Alternatives considered**:
 - Single global upload state in `MessageInput` (Rejected: Would leak completion/duplicate banners into unrelated conversations when switching threads).
 - Aborting in-flight uploads on conversation switch (Rejected during clarification in favor of Option A).
+
+## R10: Dropdown Menu & Sticky Document Pill UX Architecture
+**Decision**: Replace the inline multi-step upload panel with:
+1. A dropdown popover menu anchored above the Attachment (`+`) button displaying exactly two items (`Browse files` and `resume.pdf`) separated by a divider line.
+2. For `resume.pdf`, fetch the static bundled `/resume.pdf` asset via `fetch('/resume.pdf')`, convert to a `File` object, and upload via `POST /rag/upload`.
+3. Immediate automatic upload upon selection (either through native file picker or clicking `resume.pdf`), without staging panels or secondary confirmation buttons.
+4. An attached sticky document pill stacked directly above the outer top border of the message input container (left-aligned, attached to the composer wrapper).
+5. The pill displays the file name, in-flight progress/spinner during `uploading`/`processing`, a cancel button (`X`), and alert/error styling with cancel/dismiss if upload fails.
+6. Enforce single-active-file restriction: while a document is active or uploading, the Attachment (`+`) button is disabled (reduced opacity, aria-disabled) with a tooltip stating the active file must be cancelled first.
+7. Clicking the cancel button immediately aborts any in-flight upload (`AbortController.abort()`), removes the pill, clears the active file state, and re-enables the Attachment (`+`) button without confirmation dialogs.
+**Rationale**: Eliminates unnecessary staging clicks, provides clear visual feedback via the sticky pill, and preserves textarea auto-expansion measurements by placing the pill above the container border. Satisfies Constitution Principles I, III, and IV with zero third-party dependencies.
+**Alternatives considered**:
+- Keeping an intermediate review stage inside the pill before uploading (Rejected in Clarification Session 2026-10-22 Q1 in favor of immediate automatic upload).
+- Embedding the pill inside the textarea composition card (Rejected in Clarification Session 2026-10-22 Q3: would interfere with textarea height recalculation and cursor positioning).
+- Showing a confirmation dialog on cancel (Rejected in Clarification Session 2026-10-22 Q4: creates friction when switching files).
+

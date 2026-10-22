@@ -12,36 +12,37 @@
 | `interruptState` | `object` | Contains the pending HITL interrupt details (`interruptId`, etc.) when applicable. |
 | `selectedModel` | `string` | The ID of the currently selected model from the dropdown. |
 | `isBackendReady` | `boolean` | True once `GET /health/ready` has returned `200 OK` during initial startup; gates initial `POST /models` fetch when provided. |
-| `isUploadPanelOpen` | `boolean` | True when the inline RAG document upload panel above the composer is toggled open via the Attachment (`+`) button. |
+| `isAttachmentDropdownOpen` | `boolean` | True when the Attachment (`+`) two-option dropdown menu (`Browse files` and `resume.pdf`) is open. |
 | `uploadsByThread` | `Record<string, ThreadRagUploadState>` | Per-conversation RAG upload state keyed by `threadId` (FR-047). |
 
 ## RAG Document Upload Types (`lib/conversation/limits.ts` & `lib/conversation/backend.ts`)
 
 ### `RagUploadStatus`
-`'idle' | 'selected' | 'uploading' | 'processing' | 'ready' | 'already_added' | 'failed'`
+`'idle' | 'uploading' | 'processing' | 'ready' | 'already_added' | 'failed'`
 
 ### `ThreadRagUploadState`
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | `RagUploadStatus` | Current lifecycle stage for this conversation's document upload. |
-| `file` | `File \| null` | The selected `File` instance retained for review, upload, or retry. |
-| `fileName` | `string \| null` | Plain-text file name displayed in the summary card. |
+| `file` | `File \| null` | The active or uploaded `File` instance. |
+| `fileName` | `string \| null` | Plain-text file name displayed inside the sticky document pill. |
 | `fileTypeLabel` | `string \| null` | Normalized uppercase format label (`PDF`, `TXT`, `MD`, `DOCX`). |
 | `fileSizeBytes` | `number \| null` | File size in bytes (formatted for human-readable display). |
 | `progress` | `number \| null` | Upload transfer percentage (`0`–`100`) when measurable during `uploading`. |
 | `statusMessage` | `string \| null` | Accessible user-facing status or error copy from `lib/ui/copy.ts`. |
 | `originalFilename` | `string \| null` | Optional original file name returned by the backend when `status === 'already_added'`. |
 
-### RAG Upload State Transitions (`FR-045`, `FR-046`, `FR-047`)
+### RAG Upload State Transitions (`FR-044`, `FR-045`, `FR-046`, `FR-047`, Session 2026-10-22)
 
-1. **`idle`**: No valid file is staged for the active `threadId`. Browse and drag-and-drop controls are active.
-2. **`selected`**: User selects or drops a file that passes client-side validation (`.pdf`, `.txt`, `.md`, `.docx`, `0 < size <= 3 MB`, active `threadId` present). User can click **Upload**, **Replace**, or **Remove**. (If client-side validation fails, status transitions to `failed` with the validation error message and no file staged for upload.)
-3. **`uploading`**: User clicks **Upload** (or **Retry**). `POST /rag/upload` begins transferring `multipart/form-data` (`file`, `thread_id`). Duplicate upload clicks and chat message `Send` are disabled. Displays `Uploading document...` (with progress percentage when available).
-4. **`processing`**: Triggered when `xhr.upload.onload` fires (all request bytes transferred) while awaiting the HTTP response from `POST /rag/upload`. Chat message `Send` remains disabled. Displays `Preparing document for use...`.
-5. **`ready`**: Backend returns `200 OK` with `status: "ready"` (or `duplicate: false`). Chat message `Send` is re-enabled. Displays `Document is ready. You can now ask questions about it.`
-6. **`already_added`**: Backend returns `200 OK` with `status: "duplicate"` (or `duplicate: true`). Treated as an informational success; chat message `Send` is re-enabled. Displays `This document is already available in this conversation.`
-7. **`failed`**: Network error, timeout, or `4xx`/`5xx` response from `POST /rag/upload`. Retains `file` context so the user can click **Retry**, **Replace**, or **Remove**. Chat message `Send` is re-enabled.
+1. **`idle`**: No active file is attached to the active `threadId`. The Attachment (`+`) button is enabled.
+2. **`uploading`**: User selects a file via `Browse files` or clicks `resume.pdf`. Document pill appears stacked directly above the top border of the message input container showing the file name, in-flight progress/spinner, and a cancel button. Attachment (`+`) button is disabled (reduced opacity, aria-disabled) with a tooltip stating the active file must be cancelled first. Chat message `Send` is disabled.
+3. **`processing`**: Triggered when `xhr.upload.onload` fires (all request bytes transferred) while awaiting the HTTP response from `POST /rag/upload`. Document pill displays processing status (`Preparing document for use...`) with the cancel button. Chat message `Send` remains disabled.
+4. **`ready`**: Backend returns `200 OK` with `status: "ready"` (or `duplicate: false`). Document pill displays the file name and the cancel button. Chat message `Send` is re-enabled. Attachment (`+`) button remains disabled until the file is cancelled.
+5. **`already_added`**: Backend returns `200 OK` with `status: "duplicate"` (or `duplicate: true`). Treated as an informational success; document pill displays the file name and the cancel button. Chat message `Send` is re-enabled.
+6. **`failed`**: Validation error (unsupported format, `0` bytes, `> 3 MB`), network error, or backend `4xx`/`5xx` response. Document pill displays an alert/error styling with the error message/tooltip and a cancel/dismiss button. Chat message `Send` is re-enabled.
+7. **Cancellation (Reset to `idle`)**: Clicking the cancel button inside the pill from any state aborts any in-flight request via `AbortController`, removes the pill, clears the file from the thread's upload state back to `idle`, and re-enables the Attachment (`+`) button so another file can be selected.
+
 
 ## Startup Readiness Types (`lib/conversation/backend-readiness.ts`)
 

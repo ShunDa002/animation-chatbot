@@ -406,51 +406,95 @@ describe('MessageInput - Dynamic Models from Backend', () => {
   });
 });
 
-describe('MessageInput - User Story 9 (RAG Document Upload via Attachment Button)', () => {
-  it('toggles the inline RAG upload panel when the Attachment button is clicked', async () => {
+describe('MessageInput - User Story 9 (RAG Document Upload via Attachment Dropdown and Sticky Pill)', () => {
+  it('toggles the Attachment dropdown menu with Browse files and resume.pdf separated by a divider', async () => {
     render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" />);
     const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
 
-    // Initially not open
-    expect(screen.queryByTestId('rag-upload-panel')).toBeNull();
+    // Initially dropdown is not open
+    expect(screen.queryByTestId('rag-dropdown-menu')).toBeNull();
     expect(attachmentBtn.getAttribute('aria-expanded')).toBe('false');
 
-    // Click to open
+    // Click to open dropdown
     await userEvent.click(attachmentBtn);
-    expect(screen.getByTestId('rag-upload-panel')).toBeTruthy();
+    expect(screen.getByTestId('rag-dropdown-menu')).toBeTruthy();
     expect(attachmentBtn.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByText(copy.ragPanelTitle)).toBeTruthy();
-    expect(screen.getByText(/Supported formats/i)).toBeTruthy();
+
+    // Verify option 1: Browse files
+    const browseOpt = screen.getByTestId('rag-dropdown-browse');
+    expect(browseOpt).toBeTruthy();
+    expect(browseOpt.textContent).toContain(copy.ragBrowseLabel);
+
+    // Verify separator
+    const separator = screen.getByRole('separator');
+    expect(separator).toBeTruthy();
+
+    // Verify option 2: resume.pdf
+    const resumeOpt = screen.getByTestId('rag-dropdown-resume');
+    expect(resumeOpt).toBeTruthy();
+    expect(resumeOpt.textContent).toContain(copy.ragResumeOptionLabel);
 
     // Click to close
     await userEvent.click(attachmentBtn);
-    expect(screen.queryByTestId('rag-upload-panel')).toBeNull();
+    expect(screen.queryByTestId('rag-dropdown-menu')).toBeNull();
     expect(attachmentBtn.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('rejects invalid files client-side and displays error without calling upload', async () => {
+  it('closes dropdown when clicking outside or pressing Escape', async () => {
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" />);
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+
+    // Open dropdown
+    await userEvent.click(attachmentBtn);
+    expect(screen.getByTestId('rag-dropdown-menu')).toBeTruthy();
+
+    // Press Escape
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('rag-dropdown-menu')).toBeNull();
+
+    // Open again
+    await userEvent.click(attachmentBtn);
+    expect(screen.getByTestId('rag-dropdown-menu')).toBeTruthy();
+
+    // Click outside
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId('rag-dropdown-menu')).toBeNull();
+  });
+
+  it('rejects invalid files client-side and displays error in document pill with cancel button', async () => {
     const mockUploadFn = vi.fn();
     render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
-
-    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
-    await userEvent.click(attachmentBtn);
 
     const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
     const invalidFile = new File(['code'], 'malicious.exe', { type: 'application/x-msdownload' });
     fireEvent.change(fileInput, { target: { files: [invalidFile] } });
 
-    expect(screen.getAllByText(copy.ragErrorUnsupportedFormat).length).toBeGreaterThanOrEqual(1);
+    // Document pill appears with alert role and error message
+    const pill = screen.getByTestId('rag-document-pill');
+    expect(pill).toBeTruthy();
+    expect(pill.getAttribute('role')).toBe('alert');
+    expect(screen.getByText(copy.ragErrorUnsupportedFormat)).toBeTruthy();
     expect(mockUploadFn).not.toHaveBeenCalled();
+
+    // Attachment button is now disabled with tooltip
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(true);
+    expect(attachmentBtn.getAttribute('title')).toBe(copy.ragAttachmentDisabledTooltip);
+
+    // Clicking cancel button dismisses pill and re-enables attachment button
+    const cancelBtn = screen.getByTestId('rag-pill-cancel-btn');
+    await userEvent.click(cancelBtn);
+    expect(screen.queryByTestId('rag-document-pill')).toBeNull();
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(false);
   });
 
-  it('displays file summary and uploads document through Uploading -> Processing -> Ready states', async () => {
+  it('immediately uploads valid file from Browse and renders sticky pill with progress and ready states', async () => {
     let resolveUpload!: (value: any) => void;
     const mockUploadPromise = new Promise((res) => {
       resolveUpload = res;
     });
 
     const mockUploadFn = vi.fn().mockImplementation((threadId, file, options) => {
-      // Simulate progress & processing callbacks
       options?.onUploadProgress?.(50);
       options?.onProcessingStart?.();
       return mockUploadPromise;
@@ -458,32 +502,91 @@ describe('MessageInput - User Story 9 (RAG Document Upload via Attachment Button
 
     render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
 
-    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
-    await userEvent.click(attachmentBtn);
+    // User chooses Browse files from dropdown
+    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
+    await userEvent.click(screen.getByTestId('rag-dropdown-browse'));
 
     const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
     const validFile = new File(['valid pdf content'], 'report.pdf', { type: 'application/pdf' });
     fireEvent.change(fileInput, { target: { files: [validFile] } });
 
-    // Selected state: summary visible, upload button visible
-    expect(screen.getByTestId('rag-file-summary')).toBeTruthy();
+    // Upload started immediately
+    expect(mockUploadFn).toHaveBeenCalledWith('thread-test-123', validFile, expect.any(Object));
+
+    // Sticky pill appears stacked above composer
+    const pill = screen.getByTestId('rag-document-pill');
+    expect(pill).toBeTruthy();
     expect(screen.getByText('report.pdf')).toBeTruthy();
     expect(screen.getByText('PDF')).toBeTruthy();
 
-    const uploadSubmitBtn = screen.getByTestId('rag-upload-submit-btn');
-    await userEvent.click(uploadSubmitBtn);
-
-    expect(mockUploadFn).toHaveBeenCalledWith('thread-test-123', validFile, expect.any(Object));
+    // Attachment button is disabled during upload
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(true);
+    expect(attachmentBtn.getAttribute('title')).toBe(copy.ragAttachmentDisabledTooltip);
 
     // Resolves upload
     resolveUpload({ status: 'ready', duplicate: false, filename: 'report.pdf' });
 
     await waitFor(() => {
-      expect(screen.getAllByText(copy.ragStatusReady).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(copy.ragStatusReady)).toBeTruthy();
+    });
+
+    // Attachment button remains disabled because document is active
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('immediately displays sticky document pill with upload progress when selecting resume.pdf option', async () => {
+    let resolveResumeFetch!: (file: File) => void;
+    const mockResumeFetchPromise = new Promise<File>((res) => {
+      resolveResumeFetch = res;
+    });
+
+    let resolveUpload!: (value: any) => void;
+    const mockUploadPromise = new Promise((res) => {
+      resolveUpload = res;
+    });
+
+    const mockUploadFn = vi.fn().mockReturnValue(mockUploadPromise);
+    const mockResumeFile = new File(['resume content'], 'resume.pdf', { type: 'application/pdf' });
+    const mockLoadResumeFn = vi.fn().mockReturnValue(mockResumeFetchPromise);
+
+    render(
+      <MessageInput
+        onSend={vi.fn()}
+        threadId="thread-test-123"
+        uploadFn={mockUploadFn}
+        loadResumeFn={mockLoadResumeFn}
+      />,
+    );
+
+    // Open dropdown and select resume.pdf
+    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
+    await userEvent.click(screen.getByTestId('rag-dropdown-resume'));
+
+    expect(mockLoadResumeFn).toHaveBeenCalledTimes(1);
+
+    // Pill is immediately displayed above input with upload progress BEFORE resume asset finishes loading
+    expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+    expect(screen.getByText('resume.pdf')).toBeTruthy();
+    expect(screen.getByText('PDF')).toBeTruthy();
+    const attachBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    expect(attachBtn.hasAttribute('disabled')).toBe(true);
+    expect(attachBtn.getAttribute('title')).toBe(copy.ragAttachmentDisabledTooltip);
+
+    // Resolve the resume asset loading
+    resolveResumeFetch(mockResumeFile);
+
+    await waitFor(() => {
+      expect(mockUploadFn).toHaveBeenCalledWith('thread-test-123', mockResumeFile, expect.any(Object));
+    });
+
+    resolveUpload({ status: 'ready', duplicate: false, filename: 'resume.pdf' });
+    await waitFor(() => {
+      expect(screen.getByText(copy.ragStatusReady)).toBeTruthy();
     });
   });
 
-  it('displays informational success when backend reports duplicate document', async () => {
+  it('displays informational success inside pill when backend reports duplicate document', async () => {
     const mockUploadFn = vi.fn().mockResolvedValue({
       status: 'already_added',
       duplicate: true,
@@ -492,14 +595,12 @@ describe('MessageInput - User Story 9 (RAG Document Upload via Attachment Button
 
     render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
 
-    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
     const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [new File(['content'], 'existing.pdf')] } });
 
-    await userEvent.click(screen.getByTestId('rag-upload-submit-btn'));
-
     await waitFor(() => {
-      expect(screen.getAllByText(copy.ragStatusDuplicate).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+      expect(screen.getByText(copy.ragStatusDuplicate)).toBeTruthy();
     });
   });
 
@@ -518,43 +619,76 @@ describe('MessageInput - User Story 9 (RAG Document Upload via Attachment Button
 
     // Send button should be enabled initially
     const sendBtn = screen.getByRole('button', { name: copy.sendLabel });
-    expect(sendBtn.getAttribute('disabled')).toBeNull();
+    expect(sendBtn.hasAttribute('disabled')).toBe(false);
 
     // Start upload
-    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
     const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [new File(['content'], 'doc.txt')] } });
-    await userEvent.click(screen.getByTestId('rag-upload-submit-btn'));
 
     // Now send button must be disabled
-    expect(sendBtn.getAttribute('disabled')).not.toBeNull();
+    expect(sendBtn.hasAttribute('disabled')).toBe(true);
     expect(screen.getByText(copy.ragUploadInProgressReason)).toBeTruthy();
 
     resolveUpload({ status: 'ready', duplicate: false });
     await waitFor(() => {
-      expect(sendBtn.getAttribute('disabled')).toBeNull();
+      expect(sendBtn.hasAttribute('disabled')).toBe(false);
     });
   });
 
-  it('scopes RAG upload state per threadId', async () => {
-    const { rerender } = render(<MessageInput onSend={vi.fn()} threadId="thread-A" />);
+  it('cancel button aborts in-flight upload, clears pill, and re-enables Attachment button', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const mockUploadPromise = new Promise(() => {}); // never resolves
+    const mockUploadFn = vi.fn().mockImplementation((threadId, file, options) => {
+      capturedSignal = options?.signal;
+      return mockUploadPromise;
+    });
 
-    // Open panel on Thread A and stage a file
-    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['content'], 'long-upload.pdf')] } });
+
+    // Pill is visible and upload is in flight
+    expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(true);
+
+    // Click cancel button
+    const cancelBtn = screen.getByTestId('rag-pill-cancel-btn');
+    await userEvent.click(cancelBtn);
+
+    // In-flight upload signal was aborted
+    expect(capturedSignal?.aborted).toBe(true);
+
+    // Pill is removed and Attachment button is re-enabled
+    expect(screen.queryByTestId('rag-document-pill')).toBeNull();
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('scopes RAG upload state per threadId', async () => {
+    const mockUploadFn = vi.fn().mockResolvedValue({ status: 'ready', duplicate: false });
+    const { rerender } = render(<MessageInput onSend={vi.fn()} threadId="thread-A" uploadFn={mockUploadFn} />);
+
+    // Upload on Thread A
     const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [new File(['thread A file'], 'threadA.txt')] } });
 
-    expect(screen.getByText('threadA.txt')).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+      expect(screen.getByText('threadA.txt')).toBeTruthy();
+    });
 
     // Switch to Thread B
-    rerender(<MessageInput onSend={vi.fn()} threadId="thread-B" />);
+    rerender(<MessageInput onSend={vi.fn()} threadId="thread-B" uploadFn={mockUploadFn} />);
 
-    // In Thread B, the staged file from Thread A should NOT be visible
-    expect(screen.queryByText('threadA.txt')).toBeNull();
-    expect(screen.getByTestId('rag-dropzone')).toBeTruthy();
+    // In Thread B, Thread A's document pill should NOT be visible and Attachment button is enabled
+    expect(screen.queryByTestId('rag-document-pill')).toBeNull();
+    expect(screen.getByRole('button', { name: copy.attachmentLabel }).hasAttribute('disabled')).toBe(false);
 
     // Switch back to Thread A
-    rerender(<MessageInput onSend={vi.fn()} threadId="thread-A" />);
+    rerender(<MessageInput onSend={vi.fn()} threadId="thread-A" uploadFn={mockUploadFn} />);
+    expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
     expect(screen.getByText('threadA.txt')).toBeTruthy();
+    expect(screen.getByRole('button', { name: copy.attachmentLabel }).hasAttribute('disabled')).toBe(true);
   });
 });

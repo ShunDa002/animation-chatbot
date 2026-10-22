@@ -45,19 +45,22 @@ This guide describes how to validate the interactive message input, startup read
 4. Start the backend (or make `GET /health/ready` return `200 OK`).
 5. **Observe:** Polling stops immediately on the first `200 OK`, `POST /threads` (with a 10s timeout), `GET /conversations`, and `POST /models` are triggered, and once `threadId` returns, the loading overlay smoothly fades out.
 
-## Scenario 5: RAG Document Upload via Attachment Button
+## Scenario 5: RAG Document Upload via Attachment Dropdown and Sticky Pill
 
 **Steps:**
 1. Click the Attachment (`+`) button inside `MessageInput`.
-2. **Observe:** An inline upload panel toggles open above the composer bar showing supported formats (`.pdf`, `.txt`, `.md`, `.docx`), the `3 MB` maximum size limit, and the conversation scope notice.
-3. Select or drag-and-drop an invalid file (e.g., `.exe`, `0`-byte file, or a `> 3 MB` file).
-4. **Observe:** Client-side validation immediately rejects the file with an actionable error message and zero network requests to `POST /rag/upload`.
-5. Select or drag-and-drop a valid file (e.g., `guide.pdf`, `120 KB`).
-6. **Observe:** The panel enters `Selected` state showing `guide.pdf`, `PDF`, `120 KB`, along with **Upload**, **Replace**, and **Remove** controls.
-7. Click **Upload**.
-8. **Observe:** Duplicate upload clicks and chat `Send` are disabled; the status displays `Uploading document...` during byte transfer, transitions to `Preparing document for use...` once bytes finish uploading, and upon `200 OK` displays `Document is ready. You can now ask questions about it.` (or `This document is already available in this conversation.` when the backend reports `status: "duplicate"`).
-9. Switch to another conversation in the sidebar or click "New Chat".
-10. **Observe:** The upload status remains scoped to the conversation where the upload occurred and does not leak into the newly opened conversation.
+2. **Observe:** A clean dropdown menu opens above the button with two options: `Browse files` and `resume.pdf`, separated by a divider line.
+3. Click `resume.pdf` (or click `Browse files` and pick a valid file from your computer).
+4. **Observe:** The dropdown closes immediately, `POST /rag/upload` starts automatically, and a document pill appears stacked directly above the top border of the message input container showing `resume.pdf`, an in-flight loading indicator, and a cancel button (`X`).
+5. **Observe:** While the document is active or uploading, the Attachment (`+`) button is disabled with reduced opacity and a tooltip indicating the active document must be cancelled before uploading another file.
+6. Once upload finishes, the pill displays the document name with the cancel button (`X`), and chat message `Send` is enabled.
+7. Click the cancel button (`X`) on the pill.
+8. **Observe:** The pill disappears, the active file state is cleared, and the Attachment (`+`) button is re-enabled.
+9. Try selecting an invalid file (e.g., `.exe` or `> 3 MB` file) via `Browse files`.
+10. **Observe:** Client-side validation immediately flags the error within the pill with an actionable error message and cancel button, with zero network requests to `POST /rag/upload`.
+11. Switch to another conversation in the sidebar or click "New Chat".
+12. **Observe:** The document pill status remains scoped to the conversation where the upload occurred and does not leak into the newly opened conversation.
+
 
 ## Automated Validation
 

@@ -226,7 +226,7 @@ test.describe('Message Input UI - E2E Tests', () => {
     expect(threadRequested).toBe(true);
   });
 
-  test('T058 [US9]: RAG document upload workflow and duplicate feedback', async ({ page }) => {
+  test('T068 [US9]: RAG document upload workflow via dropdown menu, sticky pill, cancel reset, and duplicate feedback', async ({ page }) => {
     await page.route('**/threads', async (route) => {
       await route.fulfill({
         status: 200,
@@ -246,7 +246,7 @@ test.describe('Message Input UI - E2E Tests', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          status: isDuplicate ? 'duplicate' : 'ready',
+          status: isDuplicate ? 'already_added' : 'ready',
           duplicate: isDuplicate,
           filename: isDuplicate ? 'duplicate.pdf' : 'guide.pdf',
         }),
@@ -258,14 +258,16 @@ test.describe('Message Input UI - E2E Tests', () => {
     const textarea = page.getByRole('textbox', { name: /Message REM/i });
     await expect(textarea).toBeVisible({ timeout: 10000 });
 
-    // Open upload panel via Attachment (+) button
+    // Open dropdown via Attachment (+) button
     const attachBtn = page.getByRole('button', { name: /Add document to conversation/i });
     await expect(attachBtn).toBeVisible();
     await attachBtn.click();
 
-    // Verify inline upload panel appears
-    const panel = page.getByTestId('rag-upload-panel');
-    await expect(panel).toBeVisible();
+    // Verify dropdown menu appears with both options and divider
+    const dropdown = page.getByTestId('rag-dropdown-menu');
+    await expect(dropdown).toBeVisible();
+    await expect(page.getByTestId('rag-dropdown-browse')).toBeVisible();
+    await expect(page.getByTestId('rag-dropdown-resume')).toBeVisible();
 
     // Select a valid document using the hidden file input
     const fileInput = page.getByTestId('rag-file-input');
@@ -275,40 +277,41 @@ test.describe('Message Input UI - E2E Tests', () => {
       buffer: Buffer.from('%PDF-1.4 test document content'),
     });
 
-    // File summary card appears with name and Upload button
-    await expect(page.getByTestId('rag-file-summary')).toBeVisible();
-    await expect(page.getByText('guide.pdf')).toBeVisible();
-    const uploadBtn = page.getByTestId('rag-upload-submit-btn');
-    await expect(uploadBtn).toBeVisible();
+    // Sticky pill appears stacked above composer immediately with name
+    const pill = page.getByTestId('rag-document-pill');
+    await expect(pill).toBeVisible();
+    await expect(pill).toContainText('guide.pdf');
 
-    // Click Upload
-    await uploadBtn.click();
+    // Attachment button is now disabled with tooltip
+    await expect(attachBtn).toBeDisabled();
 
-    // Ready status banner appears
-    const statusBanner = page.getByTestId('rag-status-banner');
-    await expect(statusBanner).toBeVisible({ timeout: 5000 });
-    await expect(statusBanner).toContainText(/ready for use/i);
+    // Ready status appears inside pill
+    await expect(pill).toContainText(/ready/i, { timeout: 5000 });
     expect(uploadCallCount).toBe(1);
 
-    // Replace file with a duplicate document
+    // Click cancel button on pill to remove document and reset state
+    const cancelBtn = page.getByTestId('rag-pill-cancel-btn');
+    await cancelBtn.click();
+    await expect(pill).not.toBeVisible();
+    await expect(attachBtn).toBeEnabled();
+
+    // Upload duplicate document
     await fileInput.setInputFiles({
       name: 'duplicate.pdf',
       mimeType: 'application/pdf',
       buffer: Buffer.from('%PDF-1.4 duplicate document content'),
     });
 
-    const uploadDuplicateBtn = page.getByTestId('rag-upload-submit-btn');
-    await expect(uploadDuplicateBtn).toBeVisible();
-    await uploadDuplicateBtn.click();
-
-    // Duplicate informational banner appears
-    await expect(statusBanner).toBeVisible({ timeout: 5000 });
-    await expect(statusBanner).toContainText(/already available in this conversation/i);
+    // Pill appears with duplicate notice and attachment button is disabled
+    await expect(pill).toBeVisible();
+    await expect(pill).toContainText('duplicate.pdf');
+    await expect(pill).toContainText(/already available in this conversation/i, { timeout: 5000 });
+    await expect(attachBtn).toBeDisabled();
     expect(uploadCallCount).toBe(2);
 
-    // Dismiss panel via dismiss button
-    const dismissBtn = page.getByTestId('rag-dismiss-btn');
-    await dismissBtn.click();
-    await expect(panel).not.toBeVisible();
+    // Cancel duplicate document to re-enable attachment button
+    await cancelBtn.click();
+    await expect(pill).not.toBeVisible();
+    await expect(attachBtn).toBeEnabled();
   });
 });

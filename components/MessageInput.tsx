@@ -8,7 +8,6 @@ import {
   MAX_INPUT_CHARACTERS,
   remainingCharacters,
   validateRagFile,
-  formatFileSize,
   getRagFileExtension,
   type ThreadRagUploadState,
 } from '@/lib/conversation/limits';
@@ -17,6 +16,7 @@ import type { ConversationStatus } from '@/lib/conversation/useConversation';
 import {
   fetchModels,
   uploadRagDocument,
+  loadSampleResumeFile,
   type UploadRagDocumentOptions,
   type RagUploadResult,
   RagUploadError,
@@ -59,6 +59,8 @@ export interface MessageInputProps {
     file: File,
     options?: UploadRagDocumentOptions,
   ) => Promise<RagUploadResult>;
+  /** Optional resume file loader override for testing */
+  loadResumeFn?: (path?: string, signal?: AbortSignal) => Promise<File>;
 }
 
 export type Props = MessageInputProps;
@@ -85,7 +87,7 @@ const INITIAL_UPLOAD_STATE: ThreadRagUploadState = {
  * log above it (constitution III). It is also cached in sessionStorage so unsubmitted drafts
  * survive page reloads (FR-024).
  *
- * Integrates RAG document upload on the Attachment (+) button (FR-005, FR-043-FR-047).
+ * Integrates RAG document upload via a 2-option dropdown menu and sticky document pill (FR-005, FR-043-FR-047, US9).
  */
 export default function MessageInput({
   onSubmit,
@@ -104,6 +106,7 @@ export default function MessageInput({
   isBackendReady = true,
   threadId,
   uploadFn = uploadRagDocument,
+  loadResumeFn = loadSampleResumeFile,
 }: Props) {
   const isControlled = typeof value === 'string';
   const [internalDraft, setInternalDraft] = useState('');
@@ -174,21 +177,71 @@ export default function MessageInput({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const attachmentButtonRef = useRef<HTMLButtonElement>(null);
+  const uploadAbortControllerRef = useRef<AbortController | null>(null);
+
   const isMountedRef = useRef(false);
   const remaining = remainingCharacters(currentDraft);
   const atLimit = atCharacterLimit(currentDraft);
   const counterId = useId();
   const inputId = useId();
-  const uploadPanelId = useId();
+  const dropdownId = useId();
 
-  // RAG document upload state per-thread (FR-047)
-  const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
+  // RAG document upload state per-thread (FR-047, US9)
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [uploadsByThread, setUploadsByThread] = useState<Record<string, ThreadRagUploadState>>({});
 
   const activeThreadKey = threadId ?? '__default__';
   const currentUpload = uploadsByThread[activeThreadKey] ?? INITIAL_UPLOAD_STATE;
   const isUploading = currentUpload.status === 'uploading' || currentUpload.status === 'processing';
+  const hasActiveAttachment =
+    currentUpload.status !== 'idle' &&
+    (currentUpload.file !== null ||
+      currentUpload.status === 'uploading' ||
+      currentUpload.status === 'processing' ||
+      currentUpload.status === 'ready' ||
+      currentUpload.status === 'already_added' ||
+      currentUpload.status === 'failed');
+
+  // Dismiss dropdown on outside click or Escape key
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node) &&
+        attachmentButtonRef.current &&
+        !attachmentButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDropdownOpen]);
+
+  // Abort any in-flight upload on unmount
+  useEffect(() => {
+    return () => {
+      if (uploadAbortControllerRef.current) {
+        uploadAbortControllerRef.current.abort();
+        uploadAbortControllerRef.current = null;
+      }
+    };
+  }, []);
 
   // Sync draft to sessionStorage on update
   useEffect(() => {
@@ -241,6 +294,7 @@ export default function MessageInput({
   const isMultiline = currentDraft.includes('\n') || currentDraft.length > 36;
   const isTextareaDisabled = Boolean(disabled && !isWaitingForResponse && status !== 'waiting' && !isStreaming);
   const isActionsDisabled = Boolean(disabled || isConnecting);
+  const isAttachmentDisabled = isActionsDisabled || hasActiveAttachment;
 
   useEffect(() => {
     if (!isStreaming || !onStop) return;
@@ -307,100 +361,38 @@ export default function MessageInput({
     }
   }
 
-  // File selection & validation handler (FR-043)
-  const processSelectedFile = (file: File | null | undefined) => {
-    const validation = validateRagFile(file, threadId);
-    if (!validation.valid) {
-      setUploadsByThread((prev) => ({
-        ...prev,
-        [activeThreadKey]: {
-          status: 'failed',
-          file: validation.file ?? null,
-          fileName: validation.file ? validation.file.name : null,
-          fileTypeLabel: validation.file
-            ? getRagFileExtension(validation.file.name).replace('.', '').toUpperCase()
-            : null,
-          fileSizeBytes: validation.file ? validation.file.size : null,
-          progress: null,
-          statusMessage: validation.error,
-          originalFilename: null,
-        },
-      }));
-      return;
-    }
-
-    setUploadsByThread((prev) => ({
-      ...prev,
-      [activeThreadKey]: {
-        status: 'selected',
-        file: validation.file,
-        fileName: validation.file.name,
-        fileTypeLabel: validation.extension.replace('.', '').toUpperCase(),
-        fileSizeBytes: validation.file.size,
-        progress: null,
-        statusMessage: null,
-        originalFilename: null,
-      },
-    }));
-  };
-
-  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    processSelectedFile(file);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    if (!isUploading) {
-      setIsDragging(true);
-    }
-  };
-
-  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDragging(false);
-    if (isUploading) return;
-    const file = event.dataTransfer.files?.[0];
-    processSelectedFile(file);
-  };
-
-  const handleRemoveFile = () => {
-    setUploadsByThread((prev) => ({
-      ...prev,
-      [activeThreadKey]: INITIAL_UPLOAD_STATE,
-    }));
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!currentUpload.file || isUploading) return;
-    const fileToUpload = currentUpload.file;
+  // Upload runner with AbortController lifecycle
+  const startUpload = async (fileToUpload: File) => {
     const targetThreadKey = activeThreadKey;
     const targetThreadId = threadId ?? 'default-thread';
 
-    // Transition to uploading state
+    if (uploadAbortControllerRef.current) {
+      uploadAbortControllerRef.current.abort();
+      uploadAbortControllerRef.current = null;
+    }
+
+    const abortController = new AbortController();
+    uploadAbortControllerRef.current = abortController;
+
+    const ext = getRagFileExtension(fileToUpload.name).replace('.', '').toUpperCase();
+
     setUploadsByThread((prev) => ({
       ...prev,
       [targetThreadKey]: {
-        ...prev[targetThreadKey],
         status: 'uploading',
+        file: fileToUpload,
+        fileName: fileToUpload.name,
+        fileTypeLabel: ext || 'DOC',
+        fileSizeBytes: fileToUpload.size,
         progress: 0,
         statusMessage: copy.ragStatusUploading,
+        originalFilename: null,
       },
     }));
 
     try {
       const result = await uploadFn(targetThreadId, fileToUpload, {
+        signal: abortController.signal,
         onUploadProgress: (percent) => {
           setUploadsByThread((prev) => {
             const existing = prev[targetThreadKey];
@@ -431,16 +423,22 @@ export default function MessageInput({
       });
 
       const isDuplicate = result.status === 'already_added' || result.duplicate;
-      setUploadsByThread((prev) => ({
-        ...prev,
-        [targetThreadKey]: {
-          ...prev[targetThreadKey],
-          status: isDuplicate ? 'already_added' : 'ready',
-          statusMessage: isDuplicate ? copy.ragStatusDuplicate : copy.ragStatusReady,
-          originalFilename: result.originalFilename,
-        },
-      }));
+      setUploadsByThread((prev) => {
+        const existing = prev[targetThreadKey] ?? INITIAL_UPLOAD_STATE;
+        return {
+          ...prev,
+          [targetThreadKey]: {
+            ...existing,
+            status: isDuplicate ? 'already_added' : 'ready',
+            statusMessage: isDuplicate ? copy.ragStatusDuplicate : copy.ragStatusReady,
+            originalFilename: result.originalFilename,
+          },
+        };
+      });
     } catch (err: unknown) {
+      if (abortController.signal.aborted) {
+        return;
+      }
       const userMessage =
         err instanceof RagUploadError
           ? err.userMessage
@@ -448,209 +446,326 @@ export default function MessageInput({
             ? err.message
             : copy.ragErrorGeneric;
 
+      setUploadsByThread((prev) => {
+        const existing = prev[targetThreadKey] ?? INITIAL_UPLOAD_STATE;
+        return {
+          ...prev,
+          [targetThreadKey]: {
+            ...existing,
+            status: 'failed',
+            statusMessage: userMessage,
+          },
+        };
+      });
+    } finally {
+      if (uploadAbortControllerRef.current === abortController) {
+        uploadAbortControllerRef.current = null;
+      }
+    }
+  };
+
+  const handleSelectBrowseFiles = () => {
+    setIsDropdownOpen(false);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    if (!file) return;
+
+    const validation = validateRagFile(file, threadId);
+    if (!validation.valid) {
+      setUploadsByThread((prev) => ({
+        ...prev,
+        [activeThreadKey]: {
+          status: 'failed',
+          file: validation.file ?? file,
+          fileName: validation.file ? validation.file.name : file.name,
+          fileTypeLabel: getRagFileExtension(validation.file?.name || file.name).replace('.', '').toUpperCase(),
+          fileSizeBytes: validation.file ? validation.file.size : file.size,
+          progress: null,
+          statusMessage: validation.error,
+          originalFilename: null,
+        },
+      }));
+      return;
+    }
+
+    void startUpload(validation.file);
+  };
+
+  const handleSelectResumePdf = async () => {
+    setIsDropdownOpen(false);
+
+    const targetThreadKey = activeThreadKey;
+    const targetThreadId = threadId ?? 'default-thread';
+
+    if (threadId === null || threadId === '') {
       setUploadsByThread((prev) => ({
         ...prev,
         [targetThreadKey]: {
-          ...prev[targetThreadKey],
           status: 'failed',
-          statusMessage: userMessage,
+          file: null,
+          fileName: 'resume.pdf',
+          fileTypeLabel: 'PDF',
+          fileSizeBytes: null,
+          progress: null,
+          statusMessage: copy.ragErrorNoConversation,
+          originalFilename: null,
         },
       }));
+      return;
+    }
+
+    if (uploadAbortControllerRef.current) {
+      uploadAbortControllerRef.current.abort();
+      uploadAbortControllerRef.current = null;
+    }
+
+    const abortController = new AbortController();
+    uploadAbortControllerRef.current = abortController;
+
+    // Immediately display the sticky document pill in uploading state with progress
+    setUploadsByThread((prev) => ({
+      ...prev,
+      [targetThreadKey]: {
+        status: 'uploading',
+        file: null,
+        fileName: 'resume.pdf',
+        fileTypeLabel: 'PDF',
+        fileSizeBytes: null,
+        progress: 0,
+        statusMessage: copy.ragStatusUploading,
+        originalFilename: null,
+      },
+    }));
+
+    try {
+      const file = await loadResumeFn('/resume.pdf', abortController.signal);
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      const validation = validateRagFile(file, threadId);
+      if (!validation.valid) {
+        setUploadsByThread((prev) => {
+          const existing = prev[targetThreadKey] ?? INITIAL_UPLOAD_STATE;
+          return {
+            ...prev,
+            [targetThreadKey]: {
+              ...existing,
+              status: 'failed',
+              file: validation.file ?? file,
+              fileName: file.name,
+              fileTypeLabel: 'PDF',
+              fileSizeBytes: file.size,
+              progress: null,
+              statusMessage: validation.error,
+            },
+          };
+        });
+        return;
+      }
+
+      setUploadsByThread((prev) => {
+        const existing = prev[targetThreadKey] ?? INITIAL_UPLOAD_STATE;
+        return {
+          ...prev,
+          [targetThreadKey]: {
+            ...existing,
+            file: validation.file,
+            fileSizeBytes: validation.file.size,
+          },
+        };
+      });
+
+      const result = await uploadFn(targetThreadId, validation.file, {
+        signal: abortController.signal,
+        onUploadProgress: (percent) => {
+          setUploadsByThread((prev) => {
+            const existing = prev[targetThreadKey];
+            if (!existing || existing.status !== 'uploading') return prev;
+            return {
+              ...prev,
+              [targetThreadKey]: {
+                ...existing,
+                progress: percent,
+              },
+            };
+          });
+        },
+        onProcessingStart: () => {
+          setUploadsByThread((prev) => {
+            const existing = prev[targetThreadKey];
+            if (!existing) return prev;
+            return {
+              ...prev,
+              [targetThreadKey]: {
+                ...existing,
+                status: 'processing',
+                statusMessage: copy.ragStatusProcessing,
+              },
+            };
+          });
+        },
+      });
+
+      const isDuplicate = result.status === 'already_added' || result.duplicate;
+      setUploadsByThread((prev) => {
+        const existing = prev[targetThreadKey] ?? INITIAL_UPLOAD_STATE;
+        return {
+          ...prev,
+          [targetThreadKey]: {
+            ...existing,
+            status: isDuplicate ? 'already_added' : 'ready',
+            statusMessage: isDuplicate ? copy.ragStatusDuplicate : copy.ragStatusReady,
+            originalFilename: result.originalFilename,
+          },
+        };
+      });
+    } catch (err: unknown) {
+      if (abortController.signal.aborted) {
+        return;
+      }
+      const userMessage =
+        err instanceof RagUploadError
+          ? err.userMessage
+          : err instanceof Error && err.message
+            ? err.message
+            : copy.ragErrorGeneric;
+
+      setUploadsByThread((prev) => {
+        const existing = prev[targetThreadKey] ?? INITIAL_UPLOAD_STATE;
+        return {
+          ...prev,
+          [targetThreadKey]: {
+            ...existing,
+            status: 'failed',
+            statusMessage: userMessage,
+          },
+        };
+      });
+    } finally {
+      if (uploadAbortControllerRef.current === abortController) {
+        uploadAbortControllerRef.current = null;
+      }
+    }
+  };
+
+  const handleCancelAttachment = () => {
+    if (uploadAbortControllerRef.current) {
+      uploadAbortControllerRef.current.abort();
+      uploadAbortControllerRef.current = null;
+    }
+    setUploadsByThread((prev) => ({
+      ...prev,
+      [activeThreadKey]: INITIAL_UPLOAD_STATE,
+    }));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
   return (
     <form
-      className="composer flex flex-col gap-1.5 shrink-0 mt-auto justify-end w-full"
+      className="composer flex flex-col shrink-0 mt-auto justify-end w-full"
       onSubmit={(event) => {
         event.preventDefault();
         submit();
       }}
     >
-      {/* Inline RAG Document Upload Panel (FR-005, FR-044-FR-047, US9) */}
-      {isUploadPanelOpen && (
-        <div
-          id={uploadPanelId}
-          data-testid="rag-upload-panel"
-          className="rag-upload-panel w-full bg-[#181a24] border border-[#2d3142] rounded-2xl p-3 sm:p-4 mb-1 flex flex-col gap-2.5 shadow-xl transition-all duration-200 text-white"
-          role="region"
-          aria-label={copy.ragPanelTitle}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs sm:text-sm font-semibold text-white tracking-wide">
-              {copy.ragPanelTitle}
+      {/* Hidden native file input for Browse files option */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.txt,.md,.docx"
+        tabIndex={-1}
+        className="hidden"
+        data-testid="rag-file-input"
+        onChange={handleFileInputChange}
+      />
+
+      {/* Sticky Document Pill stacked directly above the outer top border of the composer container */}
+      {hasActiveAttachment && (
+        <div className="w-full flex items-center justify-start mb-1.5 sm:mb-2">
+          <div
+            data-testid="rag-document-pill"
+            role={currentUpload.status === 'failed' ? 'alert' : 'status'}
+            aria-live="polite"
+            className={`inline-flex items-center gap-2 max-w-full px-3 py-1 rounded-full text-xs transition-all shadow-md ${
+              currentUpload.status === 'failed'
+                ? 'bg-rose-950/70 border border-rose-800 text-rose-200'
+                : 'bg-[#181a24] border border-[#2d3142] text-white'
+            }`}
+          >
+            {/* File format badge */}
+            <span
+              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${
+                currentUpload.status === 'failed'
+                  ? 'bg-rose-900/80 text-rose-200 border border-rose-700/60'
+                  : 'bg-blue-900/60 text-blue-300 border border-blue-700/50'
+              }`}
+            >
+              {currentUpload.fileTypeLabel || 'DOC'}
             </span>
+
+            {/* File name */}
+            <span
+              className="font-medium truncate max-w-[140px] sm:max-w-[220px]"
+              title={currentUpload.fileName ?? ''}
+            >
+              {currentUpload.fileName || 'document'}
+            </span>
+
+            {/* Status / In-flight Spinner / Status Message */}
+            {isUploading ? (
+              <div className="flex items-center gap-1.5 shrink-0 text-blue-400">
+                <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                {currentUpload.status === 'uploading' && currentUpload.progress !== null && currentUpload.progress > 0 && (
+                  <span className="text-[10px] font-semibold">{currentUpload.progress}%</span>
+                )}
+              </div>
+            ) : currentUpload.status === 'failed' ? (
+              <span
+                className="text-[11px] text-rose-300 truncate max-w-[180px] sm:max-w-[260px]"
+                title={currentUpload.statusMessage ?? ''}
+              >
+                {currentUpload.statusMessage}
+              </span>
+            ) : currentUpload.status === 'already_added' ? (
+              <span
+                className="text-[10px] text-blue-300 font-medium truncate max-w-[160px] sm:max-w-[220px]"
+                title={currentUpload.statusMessage ?? copy.ragStatusDuplicate}
+              >
+                {copy.ragStatusDuplicate}
+              </span>
+            ) : currentUpload.status === 'ready' ? (
+              <span
+                className="text-[10px] text-emerald-400 font-medium truncate max-w-[160px] sm:max-w-[220px]"
+                title={currentUpload.statusMessage ?? copy.ragStatusReady}
+              >
+                {copy.ragStatusReady}
+              </span>
+            ) : null}
+
+            {/* Cancel button (X) */}
             <button
               type="button"
-              aria-label={copy.ragClosePanelLabel}
-              onClick={() => setIsUploadPanelOpen(false)}
-              className="p-1 rounded-full text-[var(--text-muted)] hover:text-white hover:bg-[#232736] transition-colors cursor-pointer"
+              data-testid="rag-pill-cancel-btn"
+              aria-label={copy.ragCancelAttachmentLabel}
+              onClick={handleCancelAttachment}
+              className="p-0.5 rounded-full text-[var(--text-muted)] hover:text-white hover:bg-[#232736] transition-colors cursor-pointer shrink-0 ml-0.5"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-          </div>
-
-          <p className="text-[11px] sm:text-xs text-[var(--text-muted)] m-0 leading-relaxed">
-            {copy.ragScopeNotice} {copy.ragSupportedFormatsNotice}
-          </p>
-
-          {/* Hidden native file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.txt,.md,.docx"
-            tabIndex={-1}
-            className="hidden"
-            data-testid="rag-file-input"
-            onChange={handleFileInputChange}
-          />
-
-          {/* Dropzone view when idle or failed without file */}
-          {(currentUpload.status === 'idle' || (!currentUpload.file && currentUpload.status === 'failed')) && (
-            <div
-              data-testid="rag-dropzone"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
-                isDragging
-                  ? 'border-blue-500 bg-blue-500/10'
-                  : 'border-[#383d54] hover:border-[#4d5370] bg-[#13151d]/70'
-              }`}
-            >
-              <svg
-                className="w-6 h-6 mx-auto mb-1.5 text-[var(--text-muted)]"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                />
-              </svg>
-              <p className="text-xs text-[var(--text-muted)] mb-2 m-0">{copy.ragDropzonePrompt}</p>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
-                }}
-                className="px-3 py-1 text-xs rounded-full bg-[#232736] hover:bg-[#2d3246] text-white font-medium transition-colors cursor-pointer"
-              >
-                {copy.ragBrowseLabel}
-              </button>
-            </div>
-          )}
-
-          {/* File summary view when a file is staged/uploading/complete/failed */}
-          {currentUpload.file && (
-            <div className="flex flex-col gap-2">
-              <div
-                data-testid="rag-file-summary"
-                className="flex items-center justify-between p-2.5 rounded-xl bg-[#13151d] border border-[#2d3142]"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 text-blue-300 border border-blue-700/50 uppercase shrink-0">
-                    {currentUpload.fileTypeLabel || 'DOC'}
-                  </span>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-medium text-white truncate" title={currentUpload.fileName ?? ''}>
-                      {currentUpload.fileName}
-                    </span>
-                    <span className="text-[10px] text-[var(--text-muted)]">
-                      {currentUpload.fileSizeBytes !== null ? formatFileSize(currentUpload.fileSizeBytes) : ''}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {!isUploading && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="text-xs text-[var(--text-muted)] hover:text-white px-2 py-1 rounded hover:bg-[#232736] transition-colors cursor-pointer"
-                      >
-                        {copy.ragReplaceActionLabel}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRemoveFile}
-                        className="text-xs text-rose-400 hover:text-rose-300 px-2 py-1 rounded hover:bg-rose-950/40 transition-colors cursor-pointer"
-                      >
-                        {copy.ragRemoveActionLabel}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Progress bar during uploading */}
-              {currentUpload.status === 'uploading' && (
-                <div className="w-full bg-[#232736] rounded-full h-1.5 overflow-hidden">
-                  <div
-                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-150"
-                    style={{ width: `${currentUpload.progress ?? 0}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Status and Error banners */}
-          {currentUpload.statusMessage && (
-            <div
-              data-testid="rag-status-banner"
-              role={currentUpload.status === 'failed' ? 'alert' : 'status'}
-              className={`p-2 rounded-xl text-xs flex items-center justify-between gap-2 ${
-                currentUpload.status === 'failed'
-                  ? 'bg-rose-950/50 border border-rose-800/60 text-rose-300'
-                  : currentUpload.status === 'ready'
-                    ? 'bg-emerald-950/50 border border-emerald-800/60 text-emerald-300'
-                    : currentUpload.status === 'already_added'
-                      ? 'bg-blue-950/50 border border-blue-800/60 text-blue-300'
-                      : 'bg-[#232736] text-[var(--text-muted)]'
-              }`}
-            >
-              <span className="flex-1 min-w-0">{currentUpload.statusMessage}</span>
-              {currentUpload.status === 'failed' && currentUpload.file && (
-                <button
-                  type="button"
-                  onClick={handleUpload}
-                  className="px-2.5 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white font-medium shrink-0 cursor-pointer transition-colors"
-                >
-                  {copy.ragRetryActionLabel}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Upload submit button when file is in selected state */}
-          {currentUpload.status === 'selected' && (
-            <div className="flex justify-end mt-0.5">
-              <button
-                type="button"
-                onClick={handleUpload}
-                disabled={isUploading}
-                data-testid="rag-upload-submit-btn"
-                className="px-4 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold cursor-pointer shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {copy.ragUploadActionLabel}
-              </button>
-            </div>
-          )}
-
-          {/* Accessible live region for screen readers */}
-          <div role="status" aria-live="polite" className="sr-only">
-            {currentUpload.statusMessage || ''}
           </div>
         </div>
       )}
@@ -674,7 +789,6 @@ export default function MessageInput({
             disabled={isTextareaDisabled}
             placeholder={copy.inputPlaceholder}
             aria-describedby={counterId}
-            // The cap stops input rather than truncating at send (FR-022).
             maxLength={MAX_INPUT_CHARACTERS}
             onChange={(event) => handleDraftChange(event.target.value)}
             onKeyDown={(event) => {
@@ -696,17 +810,61 @@ export default function MessageInput({
             : 'contents'
             }`}
         >
-          {/* Attachment button zone */}
-          <div className={`composer-actions-left flex items-center ${isMultiline ? '' : 'order-1 shrink-0'}`}>
+          {/* Attachment button zone with dropdown menu */}
+          <div className={`composer-actions-left relative flex items-center ${isMultiline ? '' : 'order-1 shrink-0'}`}>
+            {isDropdownOpen && (
+              <div
+                ref={dropdownRef}
+                id={dropdownId}
+                data-testid="rag-dropdown-menu"
+                role="menu"
+                aria-label={copy.ragDropdownAriaLabel}
+                className="absolute bottom-full left-0 mb-2 z-30 min-w-[150px] bg-[#181a24] border border-[#2d3142] rounded-xl shadow-2xl py-1 text-white flex flex-col focus:outline-none"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="rag-dropdown-browse"
+                  onClick={handleSelectBrowseFiles}
+                  className="w-full text-left px-3 py-2 text-xs text-white hover:bg-[#232736] transition-colors cursor-pointer flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  <span>{copy.ragBrowseLabel}</span>
+                </button>
+
+                <div className="my-1 border-t border-[#2d3142]" role="separator" />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="rag-dropdown-resume"
+                  onClick={handleSelectResumePdf}
+                  className="w-full text-left px-3 py-2 text-xs text-white hover:bg-[#232736] transition-colors cursor-pointer flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>{copy.ragResumeOptionLabel}</span>
+                </button>
+              </div>
+            )}
+
             <button
+              ref={attachmentButtonRef}
               type="button"
-              disabled={isActionsDisabled}
+              disabled={isAttachmentDisabled}
               aria-label={copy.attachmentLabel}
-              aria-expanded={isUploadPanelOpen}
-              aria-controls={uploadPanelId}
-              onClick={() => setIsUploadPanelOpen((prev) => !prev)}
+              aria-expanded={isDropdownOpen}
+              aria-controls={dropdownId}
+              title={hasActiveAttachment ? copy.ragAttachmentDisabledTooltip : copy.attachmentLabel}
+              onClick={() => {
+                if (hasActiveAttachment) return;
+                setIsDropdownOpen((prev) => !prev);
+              }}
               className={`p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
-                isUploadPanelOpen
+                isDropdownOpen
                   ? 'text-white bg-[#232736]'
                   : 'text-[var(--text-muted)] hover:text-white hover:bg-[var(--bubble-visitor)]/60'
               }`}
@@ -754,7 +912,7 @@ export default function MessageInput({
               </svg>
             </button>
 
-            {/* Stop button (if isStreaming or (onStop and waiting)) or Send button */}
+            {/* Stop button or Send button */}
             {isStreaming || (onStop && (status === 'waiting' || status === 'streaming')) ? (
               <button
                 type="button"

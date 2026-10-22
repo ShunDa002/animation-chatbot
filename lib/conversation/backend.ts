@@ -440,3 +440,30 @@ export function uploadRagDocument(
     xhr.send(formData);
   });
 }
+
+/**
+ * Loads the bundled sample resume PDF from `/resume.pdf` as a standard browser File object.
+ *
+ * @param path Optional asset URL path override (defaults to '/resume.pdf')
+ * @param fetchFnOrSignal Optional fetch implementation for testing or AbortSignal to cancel
+ * @param maybeSignal Optional AbortSignal when fetchFn is supplied
+ */
+export async function loadSampleResumeFile(
+  path: string = '/resume.pdf',
+  fetchFnOrSignal?: typeof fetch | AbortSignal,
+  maybeSignal?: AbortSignal,
+): Promise<File> {
+  const fetchFn = typeof fetchFnOrSignal === 'function' ? fetchFnOrSignal : fetch;
+  const signal =
+    fetchFnOrSignal && typeof fetchFnOrSignal !== 'function'
+      ? fetchFnOrSignal
+      : maybeSignal;
+
+  const response = signal ? await fetchFn(path, { signal }) : await fetchFn(path);
+  if (!response.ok) {
+    throw new Error(`Failed to load sample resume from ${path}: HTTP ${response.status}`);
+  }
+  const blob = await response.blob();
+  return new File([blob], 'resume.pdf', { type: 'application/pdf' });
+}
+

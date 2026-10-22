@@ -73,3 +73,7 @@ blob-report/
 # Coding Agent Local Caches & Deprecated Tool Dirs
 .agents/**/.cache/
 .agents/**/logs/
+
+/dist/
+.vinext/
+.cloudflare/
