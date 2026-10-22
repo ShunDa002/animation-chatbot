@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import MessageInput from '@/components/MessageInput';
 import { copy } from '@/lib/ui/copy';
@@ -406,5 +406,155 @@ describe('MessageInput - Dynamic Models from Backend', () => {
   });
 });
 
+describe('MessageInput - User Story 9 (RAG Document Upload via Attachment Button)', () => {
+  it('toggles the inline RAG upload panel when the Attachment button is clicked', async () => {
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" />);
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
 
+    // Initially not open
+    expect(screen.queryByTestId('rag-upload-panel')).toBeNull();
+    expect(attachmentBtn.getAttribute('aria-expanded')).toBe('false');
 
+    // Click to open
+    await userEvent.click(attachmentBtn);
+    expect(screen.getByTestId('rag-upload-panel')).toBeTruthy();
+    expect(attachmentBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(copy.ragPanelTitle)).toBeTruthy();
+    expect(screen.getByText(/Supported formats/i)).toBeTruthy();
+
+    // Click to close
+    await userEvent.click(attachmentBtn);
+    expect(screen.queryByTestId('rag-upload-panel')).toBeNull();
+    expect(attachmentBtn.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('rejects invalid files client-side and displays error without calling upload', async () => {
+    const mockUploadFn = vi.fn();
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    await userEvent.click(attachmentBtn);
+
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    const invalidFile = new File(['code'], 'malicious.exe', { type: 'application/x-msdownload' });
+    fireEvent.change(fileInput, { target: { files: [invalidFile] } });
+
+    expect(screen.getAllByText(copy.ragErrorUnsupportedFormat).length).toBeGreaterThanOrEqual(1);
+    expect(mockUploadFn).not.toHaveBeenCalled();
+  });
+
+  it('displays file summary and uploads document through Uploading -> Processing -> Ready states', async () => {
+    let resolveUpload!: (value: any) => void;
+    const mockUploadPromise = new Promise((res) => {
+      resolveUpload = res;
+    });
+
+    const mockUploadFn = vi.fn().mockImplementation((threadId, file, options) => {
+      // Simulate progress & processing callbacks
+      options?.onUploadProgress?.(50);
+      options?.onProcessingStart?.();
+      return mockUploadPromise;
+    });
+
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    await userEvent.click(attachmentBtn);
+
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    const validFile = new File(['valid pdf content'], 'report.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+
+    // Selected state: summary visible, upload button visible
+    expect(screen.getByTestId('rag-file-summary')).toBeTruthy();
+    expect(screen.getByText('report.pdf')).toBeTruthy();
+    expect(screen.getByText('PDF')).toBeTruthy();
+
+    const uploadSubmitBtn = screen.getByTestId('rag-upload-submit-btn');
+    await userEvent.click(uploadSubmitBtn);
+
+    expect(mockUploadFn).toHaveBeenCalledWith('thread-test-123', validFile, expect.any(Object));
+
+    // Resolves upload
+    resolveUpload({ status: 'ready', duplicate: false, filename: 'report.pdf' });
+
+    await waitFor(() => {
+      expect(screen.getAllByText(copy.ragStatusReady).length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('displays informational success when backend reports duplicate document', async () => {
+    const mockUploadFn = vi.fn().mockResolvedValue({
+      status: 'already_added',
+      duplicate: true,
+      filename: 'existing.pdf',
+    });
+
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['content'], 'existing.pdf')] } });
+
+    await userEvent.click(screen.getByTestId('rag-upload-submit-btn'));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(copy.ragStatusDuplicate).length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('disables chat Send while document upload is in progress', async () => {
+    let resolveUpload!: (value: any) => void;
+    const mockUploadPromise = new Promise((res) => {
+      resolveUpload = res;
+    });
+    const mockUploadFn = vi.fn().mockReturnValue(mockUploadPromise);
+
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    // Type a sendable draft
+    const textarea = screen.getByRole('textbox');
+    await userEvent.type(textarea, 'Hello during upload');
+
+    // Send button should be enabled initially
+    const sendBtn = screen.getByRole('button', { name: copy.sendLabel });
+    expect(sendBtn.getAttribute('disabled')).toBeNull();
+
+    // Start upload
+    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['content'], 'doc.txt')] } });
+    await userEvent.click(screen.getByTestId('rag-upload-submit-btn'));
+
+    // Now send button must be disabled
+    expect(sendBtn.getAttribute('disabled')).not.toBeNull();
+    expect(screen.getByText(copy.ragUploadInProgressReason)).toBeTruthy();
+
+    resolveUpload({ status: 'ready', duplicate: false });
+    await waitFor(() => {
+      expect(sendBtn.getAttribute('disabled')).toBeNull();
+    });
+  });
+
+  it('scopes RAG upload state per threadId', async () => {
+    const { rerender } = render(<MessageInput onSend={vi.fn()} threadId="thread-A" />);
+
+    // Open panel on Thread A and stage a file
+    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['thread A file'], 'threadA.txt')] } });
+
+    expect(screen.getByText('threadA.txt')).toBeTruthy();
+
+    // Switch to Thread B
+    rerender(<MessageInput onSend={vi.fn()} threadId="thread-B" />);
+
+    // In Thread B, the staged file from Thread A should NOT be visible
+    expect(screen.queryByText('threadA.txt')).toBeNull();
+    expect(screen.getByTestId('rag-dropzone')).toBeTruthy();
+
+    // Switch back to Thread A
+    rerender(<MessageInput onSend={vi.fn()} threadId="thread-A" />);
+    expect(screen.getByText('threadA.txt')).toBeTruthy();
+  });
+});

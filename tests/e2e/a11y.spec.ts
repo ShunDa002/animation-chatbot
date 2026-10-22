@@ -78,13 +78,13 @@ test.describe('keyboard only (FR-003, SC-014)', () => {
 
 test.describe('the character area is described in words (FR-038)', () => {
   test('names the character and its state before any conversation', async ({ page }) => {
-    await expect(page.getByRole('img', { name: /Aria/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM/i })).toBeVisible();
   });
 
   test('the description follows the emotion across the seam', async ({ page }) => {
     await page.getByRole('textbox').fill('#emotion-happy good news');
     await page.getByRole('button', { name: 'Send' }).click();
-    await expect(page.getByRole('img', { name: /Aria.*happy/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*happy/i })).toBeVisible();
   });
 });
 
@@ -130,7 +130,7 @@ test.describe('layout (FR-003)', () => {
 
   test('both panes stay usable when stacked', async ({ page }) => {
     await page.setViewportSize({ width: 380, height: 800 });
-    await expect(page.getByRole('img', { name: /Aria/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM/i })).toBeVisible();
     await expect(page.getByRole('textbox')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Send' })).toBeVisible();
   });

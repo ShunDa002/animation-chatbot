@@ -412,7 +412,7 @@ describe('MessageLog', () => {
     expect(screen.getByTestId('thinking-bubble')).toBeTruthy();
     expect(screen.getByTestId('thinking-dots')).toBeTruthy();
     expect(screen.getByRole('status', { name: /thinking/i })).toBeTruthy();
-    expect(screen.getByText('Aria')).toBeTruthy();
+    expect(screen.getByText('REM')).toBeTruthy();
 
     const bubble = screen.getByTestId('thinking-bubble');
     expect(bubble.querySelector('[data-testid="character-icon"]')).toBeTruthy();

@@ -147,7 +147,7 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
               style={{ animation: 'message-in 180ms cubic-bezier(0.2, 0, 0.2, 1)' }}
             >
               <span className="message-author block text-[0.7rem] uppercase tracking-wider text-slate-300 mb-0.5 [text-shadow:none]">
-                Aria
+                REM
               </span>
               {message.toolCalls && message.toolCalls.length > 0 && (
                 <ToolActivity toolCalls={message.toolCalls} />
@@ -231,11 +231,11 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
           <div
             className="message character thinking max-w-[85%] sm:max-w-[80%] rounded-2xl bg-[var(--bubble-character)]/60 border border-white/5 p-3 sm:px-4 sm:py-2.5 text-white drop-shadow-md text-sm sm:text-base leading-relaxed break-words shadow-sm transition-all"
             role="status"
-            aria-label="Aria is thinking"
+            aria-label="REM is thinking"
             style={{ animation: 'message-in 180ms cubic-bezier(0.2, 0, 0.2, 1)' }}
           >
             <span className="message-author block text-[0.7rem] uppercase tracking-wider text-slate-300 mb-1 [text-shadow:none]">
-              Aria
+              REM
             </span>
             <div
               className="flex items-center gap-1.5 py-1 px-1"
@@ -271,7 +271,7 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
             style={{ animation: 'message-in 180ms cubic-bezier(0.2, 0, 0.2, 1)' }}
           >
             <span className="message-author block text-[0.7rem] uppercase tracking-wider text-[var(--danger)] opacity-80 mb-1 [text-shadow:none] font-normal">
-              Aria
+              REM
             </span>
             <div className="message-text">
               {notice}

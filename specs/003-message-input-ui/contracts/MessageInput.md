@@ -4,14 +4,16 @@
 
 | Prop | Type | Optional | Description |
 |------|------|----------|-------------|
-| `onSubmit` | `(text: string) => void` | No | Callback invoked when the user submits a message via Enter key or Send button. |
-| `onStop` | `() => void` | No | Callback invoked when the user clicks the Stop button or presses Escape during generation. |
-| `value` | `string` | No | The controlled text value of the input, enabling the parent to restore drafts on error. |
-| `onChange` | `(text: string) => void` | No | Callback when text changes to update the controlled value. |
+| `onSubmit` | `(text: string, model?: string) => void` | Yes | Callback invoked when the user submits a message via Enter key or Send button. |
+| `onSend` | `(draft: string, model?: string) => void` | Yes | Legacy alias for `onSubmit`. |
+| `onStop` | `() => void` | Yes | Callback invoked when the user clicks the Stop button or presses Escape during generation. |
+| `value` | `string` | Yes | The controlled text value of the input, enabling the parent to restore drafts on error. |
+| `onChange` | `(text: string) => void` | Yes | Callback when text changes to update the controlled value. |
 | `disabled` | `boolean` | Yes | If true, disables the text area and all actions (used during network requests or HITL interrupt states). |
 | `isWaitingForResponse` | `boolean` | Yes | If true, places the input in a waiting state where the send button is disabled but text input remains enabled. |
 | `isStreaming` | `boolean` | Yes | If true, indicates the AI is generating a response. The component morphs the Send button into a Stop button. |
 | `isBackendReady` | `boolean` | Yes | Defaults to `true`. When `false` during initial startup, holds back the `POST /models` fetch until `GET /health/ready` returns `200 OK` (FR-040). |
+| `threadId` | `string \| null` | Yes | Active conversation thread identifier used to associate `POST /rag/upload` requests and scope RAG upload state per conversation (FR-043, FR-047). Defaults to an internal fallback key in isolated component tests when omitted; when explicitly `null` or `""`, blocks upload with an actionable message. |
 
 ## Interface Contract: Sidebar (Startup Gating)
 

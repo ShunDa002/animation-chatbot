@@ -87,12 +87,7 @@ export default function Sidebar({
 
   // Fetch dynamic conversations from GET /conversations if not provided via props and backend is ready
   useEffect(() => {
-    if (controlledConversations !== undefined) {
-      return;
-    }
-
-    if (!isBackendReady) {
-      setInternalLoading(true);
+    if (controlledConversations !== undefined || !isBackendReady) {
       return;
     }
 
@@ -196,7 +191,7 @@ export default function Sidebar({
                 aria-hidden="true"
               />
               <span className="font-semibold text-sm sm:text-base text-[var(--text)] tracking-tight truncate">
-                Aria
+                REM
               </span>
             </div>
           ) : (

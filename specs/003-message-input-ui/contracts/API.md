@@ -88,3 +88,45 @@ Fetches the available AI models for the model selector dropdown. On initial star
 **Response (Success)**:
 - Status: `200 OK`
 - Body: JSON array of model identifier strings or model objects.
+
+---
+
+## `POST /rag/upload` (API-010)
+
+Uploads a single supported document (`.pdf`, `.txt`, `.md`, `.docx`, `<= 3 MB`) to be indexed for retrieval-augmented responses in the active conversation (`thread_id`).
+
+**Request**:
+- Method: `POST`
+- Path: `/rag/upload`
+- Content-Type: `multipart/form-data`
+- Form Fields:
+  - `file`: Binary `File` object
+  - `thread_id`: Active conversation thread UUID string
+
+**Response (Newly Indexed — `Ready`)**:
+- Status: `200 OK` (or `201 Created`)
+- Body:
+```json
+{
+  "status": "ready",
+  "duplicate": false,
+  "filename": "notes.pdf"
+}
+```
+
+**Response (Duplicate Content — `Already Added`)**:
+- Status: `200 OK`
+- Body:
+```json
+{
+  "status": "duplicate",
+  "duplicate": true,
+  "filename": "notes-copy.pdf",
+  "original_filename": "notes.pdf"
+}
+```
+
+**Response (Error)**:
+- Status: `4xx` / `5xx`
+- Body: `{ "detail": "string" }`
+- Behavior: Mapped to safe, actionable user-facing copy in the inline upload panel without exposing internal file paths, content hashes, or HTTP status codes. Retains selected file context for **Retry**, **Replace**, or **Remove**.

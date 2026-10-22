@@ -47,7 +47,7 @@ test.describe('Message Input UI - E2E Tests', () => {
 
   test('T021a [US6]: Stopping generation and restoring prompt on failure', async ({ page }) => {
     await page.goto('/');
-    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
     await expect(textarea).toBeVisible({ timeout: 10000 });
 
     // Send a message that streams
@@ -149,7 +149,7 @@ test.describe('Message Input UI - E2E Tests', () => {
     });
 
     await page.goto('/');
-    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
     await expect(textarea).toBeVisible({ timeout: 10000 });
 
     // Click New Chat in sidebar
@@ -224,5 +224,91 @@ test.describe('Message Input UI - E2E Tests', () => {
     // After readiness succeeds, thread is created and loading overlay fades out
     await expect(loadingOverlay).toHaveClass(/opacity-0/, { timeout: 10000 });
     expect(threadRequested).toBe(true);
+  });
+
+  test('T058 [US9]: RAG document upload workflow and duplicate feedback', async ({ page }) => {
+    await page.route('**/threads', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'thread-e2e-rag', createdAt: new Date().toISOString() }),
+      });
+    });
+
+    let uploadCallCount = 0;
+    await page.route('**/rag/upload', async (route) => {
+      uploadCallCount++;
+      const request = route.request();
+      const postData = request.postData() ?? '';
+      const isDuplicate = postData.includes('duplicate.pdf');
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: isDuplicate ? 'duplicate' : 'ready',
+          duplicate: isDuplicate,
+          filename: isDuplicate ? 'duplicate.pdf' : 'guide.pdf',
+        }),
+      });
+    });
+
+    await page.goto('/');
+
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
+    await expect(textarea).toBeVisible({ timeout: 10000 });
+
+    // Open upload panel via Attachment (+) button
+    const attachBtn = page.getByRole('button', { name: /Add document to conversation/i });
+    await expect(attachBtn).toBeVisible();
+    await attachBtn.click();
+
+    // Verify inline upload panel appears
+    const panel = page.getByTestId('rag-upload-panel');
+    await expect(panel).toBeVisible();
+
+    // Select a valid document using the hidden file input
+    const fileInput = page.getByTestId('rag-file-input');
+    await fileInput.setInputFiles({
+      name: 'guide.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 test document content'),
+    });
+
+    // File summary card appears with name and Upload button
+    await expect(page.getByTestId('rag-file-summary')).toBeVisible();
+    await expect(page.getByText('guide.pdf')).toBeVisible();
+    const uploadBtn = page.getByTestId('rag-upload-submit-btn');
+    await expect(uploadBtn).toBeVisible();
+
+    // Click Upload
+    await uploadBtn.click();
+
+    // Ready status banner appears
+    const statusBanner = page.getByTestId('rag-status-banner');
+    await expect(statusBanner).toBeVisible({ timeout: 5000 });
+    await expect(statusBanner).toContainText(/ready for use/i);
+    expect(uploadCallCount).toBe(1);
+
+    // Replace file with a duplicate document
+    await fileInput.setInputFiles({
+      name: 'duplicate.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 duplicate document content'),
+    });
+
+    const uploadDuplicateBtn = page.getByTestId('rag-upload-submit-btn');
+    await expect(uploadDuplicateBtn).toBeVisible();
+    await uploadDuplicateBtn.click();
+
+    // Duplicate informational banner appears
+    await expect(statusBanner).toBeVisible({ timeout: 5000 });
+    await expect(statusBanner).toContainText(/already available in this conversation/i);
+    expect(uploadCallCount).toBe(2);
+
+    // Dismiss panel via dismiss button
+    const dismissBtn = page.getByTestId('rag-dismiss-btn');
+    await dismissBtn.click();
+    await expect(panel).not.toBeVisible();
   });
 });

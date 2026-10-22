@@ -1,5 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getBackendUrl, createThread, sendMessage, resumeChat, stopChat, fetchModels, getModels, fetchConversations, fetchHistory } from '@/lib/conversation/backend';
+import {
+  getBackendUrl,
+  createThread,
+  sendMessage,
+  resumeChat,
+  stopChat,
+  fetchModels,
+  getModels,
+  fetchConversations,
+  fetchHistory,
+  uploadRagDocument,
+  RagUploadError,
+} from '@/lib/conversation/backend';
+import { copy } from '@/lib/ui/copy';
 
 describe('lib/conversation/backend', () => {
   const originalEnv = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -133,7 +146,7 @@ describe('lib/conversation/backend', () => {
       globalThis.fetch = fetchMock;
 
       const controller = new AbortController();
-      const response = await sendMessage('test-thread-123', 'Hello Aria!', controller.signal);
+      const response = await sendMessage('test-thread-123', 'Hello REM!', controller.signal);
 
       expect(response).toBe(mockResponse);
       expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:8000/chat', {
@@ -144,7 +157,7 @@ describe('lib/conversation/backend', () => {
         },
         body: JSON.stringify({
           thread_id: 'test-thread-123',
-          user_input: 'Hello Aria!',
+          user_input: 'Hello REM!',
         }),
         signal: controller.signal,
       });
@@ -411,7 +424,7 @@ describe('lib/conversation/backend', () => {
         {
           id: 'msg-1',
           author: 'visitor',
-          text: 'Hello Aria',
+          text: 'Hello REM',
           status: 'completed',
           toolCalls: '',
           interruptId: '',
@@ -498,6 +511,219 @@ describe('lib/conversation/backend', () => {
       await expect(fetchHistory('error-thread')).rejects.toThrow('Network connection reset');
     });
   });
+
+  describe('uploadRagDocument (API-010, FR-045, FR-046, US9)', () => {
+    class FakeXHR {
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn();
+      abort = vi.fn();
+      status = 200;
+      responseText = '';
+      upload = {
+        onprogress: null as any,
+        onload: null as any,
+      };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      ontimeout: (() => void) | null = null;
+    }
+
+    it('sends POST /rag/upload with file and thread_id in FormData', async () => {
+      let createdXhr!: FakeXHR;
+      const xhrFactory = () => {
+        createdXhr = new FakeXHR();
+        createdXhr.status = 200;
+        createdXhr.responseText = JSON.stringify({ status: 'ready', filename: 'test.pdf' });
+        createdXhr.send.mockImplementation(() => {
+          createdXhr.onload?.();
+        });
+        return createdXhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File(['dummy content'], 'test.pdf', { type: 'application/pdf' });
+      const result = await uploadRagDocument('thread-123', file, { xhrFactory });
+
+      expect(createdXhr.open).toHaveBeenCalledWith('POST', 'http://127.0.0.1:8000/rag/upload');
+      expect(createdXhr.setRequestHeader).toHaveBeenCalledWith('Accept', 'application/json');
+      expect(createdXhr.send).toHaveBeenCalled();
+
+      const sentFormData = createdXhr.send.mock.calls[0][0] as FormData;
+      expect(sentFormData.get('file')).toBe(file);
+      expect(sentFormData.get('thread_id')).toBe('thread-123');
+
+      expect(result.status).toBe('ready');
+      expect(result.duplicate).toBe(false);
+      expect(result.filename).toBe('test.pdf');
+    });
+
+    it('triggers onUploadProgress and onProcessingStart callbacks', async () => {
+      const onUploadProgress = vi.fn();
+      const onProcessingStart = vi.fn();
+
+      const xhrFactory = () => {
+        const xhr = new FakeXHR();
+        xhr.status = 200;
+        xhr.responseText = JSON.stringify({ status: 'ready' });
+        xhr.send.mockImplementation(() => {
+          xhr.upload.onprogress?.({ lengthComputable: true, loaded: 50, total: 100 });
+          xhr.upload.onload?.();
+          xhr.onload?.();
+        });
+        return xhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File(['sample'], 'doc.txt');
+      await uploadRagDocument('t-1', file, {
+        xhrFactory,
+        onUploadProgress,
+        onProcessingStart,
+      });
+
+      expect(onUploadProgress).toHaveBeenCalledWith(50);
+      expect(onProcessingStart).toHaveBeenCalled();
+    });
+
+    it('resolves with already_added status when backend returns duplicate', async () => {
+      const xhrFactory = () => {
+        const xhr = new FakeXHR();
+        xhr.status = 200;
+        xhr.responseText = JSON.stringify({
+          status: 'duplicate',
+          duplicate: true,
+          original_filename: 'original.pdf',
+        });
+        xhr.send.mockImplementation(() => {
+          xhr.onload?.();
+        });
+        return xhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File(['content'], 'copy.pdf');
+      const result = await uploadRagDocument('thread-dup', file, { xhrFactory });
+
+      expect(result.status).toBe('already_added');
+      expect(result.duplicate).toBe(true);
+      expect(result.originalFilename).toBe('original.pdf');
+    });
+
+    it('maps 400 empty file error to copy.ragErrorEmptyFile', async () => {
+      const xhrFactory = () => {
+        const xhr = new FakeXHR();
+        xhr.status = 400;
+        xhr.responseText = JSON.stringify({ detail: 'File is empty' });
+        xhr.send.mockImplementation(() => {
+          xhr.onload?.();
+        });
+        return xhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File([], 'empty.pdf');
+      await expect(uploadRagDocument('t-1', file, { xhrFactory })).rejects.toMatchObject({
+        name: 'RagUploadError',
+        userMessage: copy.ragErrorEmptyFile,
+      });
+    });
+
+    it('maps 413 or large error to copy.ragErrorFileTooLarge', async () => {
+      const xhrFactory = () => {
+        const xhr = new FakeXHR();
+        xhr.status = 413;
+        xhr.responseText = JSON.stringify({ detail: 'File too large' });
+        xhr.send.mockImplementation(() => {
+          xhr.onload?.();
+        });
+        return xhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File(['large'], 'large.pdf');
+      await expect(uploadRagDocument('t-1', file, { xhrFactory })).rejects.toMatchObject({
+        userMessage: copy.ragErrorFileTooLarge,
+      });
+    });
+
+    it('maps 415 or format error to copy.ragErrorUnsupportedFormat', async () => {
+      const xhrFactory = () => {
+        const xhr = new FakeXHR();
+        xhr.status = 415;
+        xhr.responseText = JSON.stringify({ detail: 'Unsupported format' });
+        xhr.send.mockImplementation(() => {
+          xhr.onload?.();
+        });
+        return xhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File(['bin'], 'app.exe');
+      await expect(uploadRagDocument('t-1', file, { xhrFactory })).rejects.toMatchObject({
+        userMessage: copy.ragErrorUnsupportedFormat,
+      });
+    });
+
+    it('maps unreadable text error to copy.ragErrorUnreadableText', async () => {
+      const xhrFactory = () => {
+        const xhr = new FakeXHR();
+        xhr.status = 422;
+        xhr.responseText = JSON.stringify({ detail: 'Document contains no text' });
+        xhr.send.mockImplementation(() => {
+          xhr.onload?.();
+        });
+        return xhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File(['scanned'], 'scanned.pdf');
+      await expect(uploadRagDocument('t-1', file, { xhrFactory })).rejects.toMatchObject({
+        userMessage: copy.ragErrorUnreadableText,
+      });
+    });
+
+    it('maps 502/503 service unavailable to copy.ragErrorServiceUnavailable', async () => {
+      const xhrFactory = () => {
+        const xhr = new FakeXHR();
+        xhr.status = 503;
+        xhr.responseText = 'Service Unavailable';
+        xhr.send.mockImplementation(() => {
+          xhr.onload?.();
+        });
+        return xhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File(['content'], 'test.pdf');
+      await expect(uploadRagDocument('t-1', file, { xhrFactory })).rejects.toMatchObject({
+        userMessage: copy.ragErrorServiceUnavailable,
+      });
+    });
+
+    it('maps network errors to copy.ragErrorNetwork', async () => {
+      const xhrFactory = () => {
+        const xhr = new FakeXHR();
+        xhr.send.mockImplementation(() => {
+          xhr.onerror?.();
+        });
+        return xhr as unknown as XMLHttpRequest;
+      };
+
+      const file = new File(['content'], 'test.pdf');
+      await expect(uploadRagDocument('t-1', file, { xhrFactory })).rejects.toMatchObject({
+        userMessage: copy.ragErrorNetwork,
+      });
+    });
+
+    it('handles AbortSignal cancellation', async () => {
+      let createdXhr!: FakeXHR;
+      const xhrFactory = () => {
+        createdXhr = new FakeXHR();
+        return createdXhr as unknown as XMLHttpRequest;
+      };
+
+      const controller = new AbortController();
+      const file = new File(['content'], 'test.pdf');
+      const uploadPromise = uploadRagDocument('t-1', file, {
+        xhrFactory,
+        signal: controller.signal,
+      });
+
+      controller.abort();
+      expect(createdXhr.abort).toHaveBeenCalled();
+    });
+  });
 });
-
-

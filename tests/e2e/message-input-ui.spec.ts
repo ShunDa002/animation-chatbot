@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test.describe('Message Input UI Redesign (quickstart.md & 60fps performance validation)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('textbox', { name: /Message Aria/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('textbox', { name: /Message REM/i })).toBeVisible({ timeout: 10000 });
   });
 
   test('Scenario 1: Single-Line Pill Validation', async ({ page }) => {
@@ -16,7 +16,7 @@ test.describe('Message Input UI Redesign (quickstart.md & 60fps performance vali
 
     // Verify all 5 controls are present inline
     await expect(page.getByRole('button', { name: /Add attachment/i })).toBeVisible();
-    await expect(page.getByRole('textbox', { name: /Message Aria/i })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: /Message REM/i })).toBeVisible();
     await expect(page.getByRole('combobox', { name: /Select model/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Voice input/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Send/i })).toBeVisible();
@@ -24,7 +24,7 @@ test.describe('Message Input UI Redesign (quickstart.md & 60fps performance vali
 
   test('Scenario 2: Auto-Expansion and Layout Morphing Validation with 60fps frame trace', async ({ page }) => {
     const composerBox = page.locator('.composer-box');
-    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
 
     // Wait for initial render/textures to settle before measuring animation transition
     await page.waitForTimeout(500);
@@ -102,7 +102,7 @@ test.describe('Message Input UI Redesign (quickstart.md & 60fps performance vali
   });
 
   test('Scenario 3: Maximum Height Validation (5 lines max)', async ({ page }) => {
-    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
 
     // Fill with 15 lines to exceed the ~200px height limit
     await textarea.fill('Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11\nLine 12\nLine 13\nLine 14\nLine 15');
@@ -122,9 +122,9 @@ test.describe('Message Input UI Redesign (quickstart.md & 60fps performance vali
   });
 
   test('Scenario 4: Submission Validation', async ({ page }) => {
-    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
 
-    await textarea.fill('Hello Aria');
+    await textarea.fill('Hello REM');
     // Press Enter to submit
     await textarea.press('Enter');
 
@@ -141,7 +141,7 @@ test.describe('Message Input UI Redesign (quickstart.md & 60fps performance vali
 
   test('Scenario 5: Expands upwards without overflowing below the screen', async ({ page }) => {
     const composerBox = page.locator('.composer-box');
-    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
     const viewport = page.viewportSize()!;
 
     // In single-line mode, record initial box bounds
@@ -171,7 +171,7 @@ test.describe('Message Input UI Redesign (quickstart.md & 60fps performance vali
   });
 
   test('Scenario 6: HITL Interrupt Validation (quickstart.md)', async ({ page }) => {
-    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
     const sendButton = page.getByRole('button', { name: /Send/i });
 
     // 1. Send message configured to interrupt mid-stream
@@ -213,7 +213,7 @@ test.describe('Message Input UI Redesign (quickstart.md & 60fps performance vali
   });
 
   test('Scenario 7: Stop Generation Validation (US6)', async ({ page }) => {
-    const textarea = page.getByRole('textbox', { name: /Message Aria/i });
+    const textarea = page.getByRole('textbox', { name: /Message REM/i });
     const sendButton = page.getByRole('button', { name: /Send/i });
 
     // 1. Send message configured to stream and stall mid-stream

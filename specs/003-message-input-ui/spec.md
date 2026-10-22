@@ -60,6 +60,14 @@
 - Q: When the user clicks "Retry" on the loading page, should startup restart from `/health/ready` or resume at the failed step? → A: Option A - "Retry" always restarts from `/health/ready` with a fresh 120-second deadline, then runs the gated requests; any in-progress attempt is cancelled first so polling loops never overlap.
 - Q: Should the `/health/ready` check run only during app startup, or also before later requests such as "New Chat" or after mid-session failures? → A: Option A - Startup and the loading-page "Retry" only; mid-session requests keep their existing inline error and "Retry" behavior.
 
+### Session 2026-10-21
+
+- Q: What is the backend HTTP endpoint, request format, and response structure for uploading a RAG document to the active conversation? → A: Option A - `POST /rag/upload` with `multipart/form-data` (`file`, `thread_id`); returns `200 OK` JSON with `status: "ready" | "duplicate"` (or boolean `duplicate: true`) and `{ detail }` on error.
+- Q: Which document file formats and maximum file size should the client-side validator allow before uploading? → A: `.pdf`, `.txt`, `.md`, `.docx` up to `3 MB`.
+- Q: How should clicking the Attachment (`+`) button in `MessageInput.tsx` present the file selection and upload workflow? → A: Option A - Toggle an inline upload panel above `MessageInput` with pre-selection guidance, file picker + drag-and-drop zone, file review summary, and an explicit **Upload** button.
+- Q: How should the frontend transition from `Uploading` to `Processing` during `POST /rag/upload`, and should sending chat messages be blocked while an upload is in progress? → A: Option A - Transition `Uploading` → `Processing` when request bytes finish uploading (`upload.onload` while awaiting response), and disable chat `Send` while upload/processing is in flight.
+- Q: What should happen if the user switches to a different conversation (`threadId` changes) while a document upload is in progress or after it completes? → A: Option A - Scope upload state per `threadId` in memory so in-flight uploads finish for their originating `threadId` and status only displays in that conversation.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Single-line Input Entry (Priority: P1)
@@ -191,6 +199,24 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 
 ---
 
+### User Story 9 - RAG Document Upload via Attachment Button (Priority: P1)
+
+A user clicks the Attachment (`+`) button inside `MessageInput` to open a compact inline upload panel above the composer bar. The panel explains that uploaded documents improve answers in the current conversation, advises not to upload unauthorized information, and states the supported formats (`.pdf`, `.txt`, `.md`, `.docx`) and maximum size (`3 MB`). The user selects a single file via the file picker or drag-and-drop, reviews its summary (name, type, size) with options to replace or remove it, and clicks **Upload**. The UI progresses through `Uploading` and `Processing` states, then displays a clear `Ready` message (or an informational `Already Added` message if the backend detects duplicate content in the current conversation). If validation or upload fails, an actionable inline error message is shown with recovery options (**Retry** or replace/remove file).
+
+**Why this priority**: Enables retrieval-augmented generation (RAG) grounded in user-supplied documents scoped to the active conversation.
+
+**Independent Test**: Clicking the Attachment button opens the inline upload panel. Selecting a valid file shows its summary; clicking Upload sends `POST /rag/upload` with `file` and `thread_id`, transitions through Uploading/Processing, and renders Ready, Already Added, or Failed with Retry.
+
+**Acceptance Scenarios**:
+
+1. **Given** an active conversation, **When** the user clicks the Attachment (`+`) button in `MessageInput`, **Then** an inline upload panel toggles open above the input bar showing supported formats (`.pdf`, `.txt`, `.md`, `.docx`), max size (`3 MB`), and conversation scope guidance.
+2. **Given** the upload panel is open, **When** the user selects or drops a valid file, **Then** the panel enters the `Selected` state displaying the file name, type, and size, along with Replace, Remove, and **Upload** controls.
+3. **Given** a file is empty (`0` bytes), unsupported, or larger than `3 MB`, **When** the user selects or drops it, **Then** client-side validation immediately rejects it with an actionable inline message without calling `POST /rag/upload`.
+4. **Given** a valid file is in the `Selected` state, **When** the user clicks **Upload**, **Then** duplicate submissions are disabled, the UI shows `Uploading` and then `Processing` feedback, and upon a `200 OK` response shows either `Ready` (**Document is ready. You can now ask questions about it.**) or `Already Added` (**This document is already available in this conversation.**) as an informational success.
+5. **Given** an upload or processing failure occurs, **When** `POST /rag/upload` errors, **Then** the panel enters the `Failed` state retaining the selected file context so the user can click **Retry**, replace the file, or remove/dismiss it.
+
+---
+
 ### Edge Cases
 
 - What happens when the user types a prompt longer than 5 lines? The container stops expanding vertically and introduces an inner scrollbar.
@@ -202,6 +228,9 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 - What happens if the backend is not yet reachable when the frontend starts (e.g., still running `init_db()`)? The loader stays visible while `GET /health/ready` is retried with backoff for up to 120 seconds; network errors and gateway errors are treated as "not ready yet".
 - What happens if `GET /health/ready` returns a permanent client error (e.g., `404` from a wrong `NEXT_PUBLIC_BACKEND_URL`)? Polling stops immediately and the loading page shows a generic error message with a "Retry" button, without the status code.
 - What happens on page reload when `sessionStorage` already contains a cached `threadId`? The frontend still polls `GET /health/ready` first (holding back `GET /conversations` and `POST /models` until `200 OK`), and once readiness succeeds, skips `POST /threads` and transitions directly to the ready state using the restored `threadId`.
+- What happens if a user selects an empty (`0`-byte) file, an unsupported file format (not `.pdf`, `.txt`, `.md`, or `.docx`), or a file larger than `3 MB`? Client-side validation immediately rejects the file before starting `POST /rag/upload` and displays an actionable inline message guiding the user to choose a valid file.
+- What happens if a user uploads a file whose content has already been added to the active conversation (even under a different file name)? The backend returns a duplicate indicator on `POST /rag/upload`, and the UI treats it as an informational `Already Added` success (**This document is already available in this conversation.**) rather than an error.
+- What happens if the user switches conversations (`threadId` changes) while a RAG document upload is in progress? The upload remains bound to the originating `threadId` in memory so completion (`Ready`, `Already Added`, or `Failed`) only appears when viewing that originating conversation and is never presented as belonging to the newly opened conversation.
 
 ## Requirements *(mandatory)*
 
@@ -211,7 +240,7 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 - **FR-002**: System MUST distribute the following controls inline horizontally in the default state: Attachment Action (+), Text Input Area, Model Selector, Voice Input, and Send Action.
 - **FR-003**: System MUST provide a dynamic model selector dropdown that fetches available models from the backend via a `POST /models` request.
 - **FR-004**: System MUST style the model selector dropdown to have no border, a transparent background, persistent white text color, and a `#232736` background color on hover.
-- **FR-005**: System MUST provide dummy UI buttons for Attachment and Voice Input (no backend integration required).
+- **FR-005**: System MUST integrate RAG document upload functionality on the Attachment button (`+`) inside `MessageInput`, while keeping the Voice Input button as a dummy UI control (no backend integration required for Voice Input). *(Updated in Session 2026-10-21; formerly both Attachment and Voice Input were dummy UI buttons.)*
 - **FR-006**: System MUST dynamically morph the container into a rounded rectangular card with a two-tier layout when text exceeds 36 characters or spans multiple lines.
 - **FR-007**: System MUST anchor the Attachment button to the bottom-left, and the Model Selector, Voice Input, and Send button to the bottom-right when in the two-tier layout.
 - **FR-008**: System MUST adjust the text input height dynamically line-by-line as content grows, expanding upward to avoid pushing navigation elements abruptly.
@@ -249,6 +278,11 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 - **FR-037**: System MUST immediately clear the current chat view and show a skeleton loader or spinner in the main chat area while waiting for the new thread ID.
 - **FR-038**: System MUST only add the new conversation to the sidebar list after the user sends the first message in the new thread.
 - **FR-039**: System MUST display an error message with a "Retry" button centered in the main chat area if the request to fetch a new thread ID fails.
+- **FR-043**: System MUST indicate supported document formats (`.pdf`, `.txt`, `.md`, `.docx`) and maximum file size (`3 MB`) before selection, and MUST validate selected files on the client before starting an upload: rejecting empty files (`0` bytes), unsupported file formats, files exceeding `3 MB` (`3 * 1024 * 1024` bytes), or attempts when no active conversation (`threadId`) is available, with actionable inline error messages.
+- **FR-044**: System MUST toggle an inline RAG document upload panel above the `MessageInput` bar when the user clicks the Attachment (`+`) button, supporting single-file selection via both file picker and drag-and-drop, displaying a selected file summary (file name as plain text, file type, file size) with Remove and Replace controls, and requiring an explicit **Upload** action to submit.
+- **FR-045**: System MUST implement the RAG upload state model (`Idle`, `Selected`, `Uploading`, `Processing`, `Ready`, `Already Added`, `Failed`) with accessible inline status announcements (`Uploading document...`, `Preparing document for use...`, `Document is ready. You can now ask questions about it.`, `This document is already available in this conversation.`, and actionable error copy with a **Retry** action on failure) while preventing duplicate concurrent submissions.
+- **FR-046**: System MUST transition from `Uploading` (`Uploading document...`, with measurable progress when available) to `Processing` (`Preparing document for use...`) when the request payload bytes finish transferring (`upload.onload`) and the client is awaiting the backend's `POST /rag/upload` ingestion response, and MUST disable chat message submission (`Send`) while a document is in `Uploading` or `Processing` state.
+- **FR-047**: System MUST scope RAG document upload state by `threadId` in memory so that if the user switches conversations while an upload is in progress or after it completes, the upload result (`Ready`, `Already Added`, or `Failed`) remains associated with the originating `threadId` and is never displayed as belonging to a different conversation.
 
 ### Integration & External Dependencies
 
@@ -261,10 +295,12 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 - **API-007**: The system MUST use `GET /history/{thread_id}` to fetch the messages for a specific conversation. The endpoint returns a JSON array of objects formatted as: `[{ "id": string, "author": string, "text": string, "status": string, "toolCalls": string, "interruptId": string, "interruptDecision": string, "createdAt": DateTime }]`.
 - **API-008**: The system MUST use `POST /threads` to create a new thread and retrieve its ID.
 - **API-009**: The system MUST use `GET /health/ready` (no request body, browser caching disabled) as the startup readiness check. `200` means ready; `408`, `425`, `429`, `5xx` (including `503`), network errors, and per-request timeouts mean not yet ready and are retried; any other `4xx` is permanent and stops polling (see `docs/frontend_backend_readiness.md`).
+- **API-010**: The system MUST use `POST /rag/upload` with `multipart/form-data` containing `file` (the selected binary file) and `thread_id` (the active conversation's thread identifier) to upload a document for RAG ingestion. A `200 OK` JSON response indicates either newly indexed (`status: "ready"` or `duplicate: false`) or already available in the conversation (`status: "duplicate"` or `duplicate: true`), optionally returning `filename`, `original_filename`, and `message`; error responses (`4xx`/`5xx`) return JSON `{ "detail": string }` (which MUST be mapped to safe, actionable user-facing copy without exposing internal details).
 
 ### Key Entities
 
 - **MessageInput State**: Manages the current text value, line count, and active layout mode (single-line vs multi-line).
+- **RAG Document Upload State (Per-Thread)**: Tracks the upload lifecycle scoped by `threadId` (`idle`, `selected`, `uploading`, `processing`, `ready`, `already_added`, `failed`), the selected `File` metadata (plain-text file name, extension/MIME type, byte size), upload progress percentage, and user-facing status/error copy.
 
 ## Success Criteria *(mandatory)*
 
@@ -274,6 +310,7 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 - **SC-002**: All controls (attachment, dynamic model selector, voice, send) are visually present and correctly positioned in both single-line and two-tier layouts.
 - **SC-003**: The send button is rendered prominently in cobalt blue when text is present.
 - **SC-004**: On startup, zero backend-dependent requests (`POST /threads`, `GET /conversations`, `POST /models`) are sent before `GET /health/ready` returns `200 OK`, and startup surfaces a generic retryable error (with no raw HTTP status codes) if readiness exceeds 120 seconds, returns a non-retriable `4xx`, or `POST /threads` exceeds 10 seconds.
+- **SC-005**: Users can open the RAG upload panel via the Attachment (`+`) button, validate `.pdf`, `.txt`, `.md`, and `.docx` files up to `3 MB` client-side with zero network calls for invalid files, observe distinct `Uploading` and `Processing` states during `POST /rag/upload`, receive clear `Ready` or `Already Added` feedback scoped to the active `threadId`, and retry failed uploads without losing file selection context.
 
 ## Assumptions
 

@@ -18,7 +18,7 @@ async function send(page: Page, text: string): Promise<void> {
 test.describe('Thinking state and delay handling (US4)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('img', { name: /Aria/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('img', { name: /REM/i })).toBeVisible({ timeout: 5000 });
   });
 
   test('T061: Delayed reply keeps character in thinking state and waiting indicator visible until first chunk (FR-010, SC-005)', async ({
@@ -30,17 +30,17 @@ test.describe('Thinking state and delay handling (US4)', () => {
     // 1. Immediately in thinking state
     const waitingIndicator = page.locator('.waiting-indicator');
     await expect(waitingIndicator).toBeVisible({ timeout: 500 });
-    await expect(page.getByRole('img', { name: /Aria.*thoughtful/i })).toBeVisible({ timeout: 1000 });
+    await expect(page.getByRole('img', { name: /REM.*thoughtful/i })).toBeVisible({ timeout: 1000 });
 
     // 2. Still in thinking state at 2.5s
     await page.waitForTimeout(2500);
     await expect(waitingIndicator).toBeVisible();
-    await expect(page.getByRole('img', { name: /Aria.*thoughtful/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*thoughtful/i })).toBeVisible();
 
     // 3. Once reply starts arriving (~5s), thinking state ends and waiting indicator disappears
     await expect(page.locator('.message.character').first()).toBeVisible({ timeout: 7000 });
     await expect(waitingIndicator).toBeHidden();
-    await expect(page.getByRole('img', { name: /Aria.*calm/i })).toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('img', { name: /REM.*calm/i })).toBeVisible({ timeout: 3000 });
   });
 
   test('T062: 20-second abandonment resets thinking state and invites visitor to resend (FR-034, SC-009)', async ({
@@ -52,11 +52,11 @@ test.describe('Thinking state and delay handling (US4)', () => {
     await send(page, '#hang wait forever');
 
     // Starts in thinking state
-    await expect(page.getByRole('img', { name: /Aria.*thoughtful/i })).toBeVisible({ timeout: 1000 });
+    await expect(page.getByRole('img', { name: /REM.*thoughtful/i })).toBeVisible({ timeout: 1000 });
 
     // After ~20s timeout, error status appears and thinking state ends
     await expect(page.locator('.status-line.error')).toBeVisible({ timeout: 26_000 });
-    await expect(page.getByRole('img', { name: /Aria.*calm/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('img', { name: /REM.*calm/i })).toBeVisible({ timeout: 5000 });
 
     // Visitor can send again
     const textbox = page.getByRole('textbox');

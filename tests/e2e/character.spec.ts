@@ -16,14 +16,14 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
     await page.goto('/');
 
     // Character area with img role is visible within 3 seconds
-    const characterArea = page.getByRole('img', { name: /Aria/i });
+    const characterArea = page.getByRole('img', { name: /REM/i });
     await expect(characterArea).toBeVisible({ timeout: 3000 });
 
     const elapsed = Date.now() - startTime;
     expect(elapsed).toBeLessThan(3000);
 
     // Initial neutral state description
-    await expect(characterArea).toHaveAttribute('aria-label', /Aria.*calm/i);
+    await expect(characterArea).toHaveAttribute('aria-label', /REM.*calm/i);
   });
 
   test('dev-console handle triggers reaction and updates aria-label', async ({ page }) => {
@@ -39,15 +39,15 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
       (window as any).__setEmotion('happy');
     });
 
-    // Aria-label follows reaction
-    await expect(page.getByRole('img', { name: /Aria.*happy/i })).toBeVisible();
+    // Character aria-label follows reaction
+    await expect(page.getByRole('img', { name: /REM.*happy/i })).toBeVisible();
 
     // Trigger another reaction
     await page.evaluate(() => {
       (window as any).__setEmotion('surprised');
     });
 
-    await expect(page.getByRole('img', { name: /Aria.*surprised/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*surprised/i })).toBeVisible();
   });
 
   test('broken model URL falls back to still image while conversation stays usable (FR-012, R11)', async ({
@@ -75,7 +75,7 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
     await page.goto('/');
 
     // Character area is visible
-    const characterArea = page.getByRole('img', { name: /Aria/i });
+    const characterArea = page.getByRole('img', { name: /REM/i });
     await expect(characterArea).toBeVisible({ timeout: 5000 });
 
     // Wait for character stage to mount and expose window.__characterHandle
@@ -199,7 +199,7 @@ test.describe('Character stage alive on arrival (US1 - SC-002, FR-005, FR-012)',
     });
 
     // Verify reaction has started
-    await expect(page.getByRole('img', { name: /Aria.*happy/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*happy/i })).toBeVisible();
 
     // Trigger pointermove during reaction
     await page.mouse.move(400, 300);

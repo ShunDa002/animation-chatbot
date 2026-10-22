@@ -43,20 +43,16 @@ export default function ChatPanel({
   const effectiveHistoryError = historyError ?? conversation.historyError ?? null;
   const handleRetryHistory = onRetryHistory ?? conversation.retryHistory;
 
-  const [inputDraft, setInputDraft] = useState('');
-
-  useEffect(() => {
+  const [inputDraft, setInputDraft] = useState(() => {
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
-        const saved = window.sessionStorage.getItem(STORAGE_KEY_DRAFT);
-        if (saved) {
-          setInputDraft(saved);
-        }
+        return window.sessionStorage.getItem(STORAGE_KEY_DRAFT) || '';
       }
     } catch {
       // Ignore
     }
-  }, []);
+    return '';
+  });
 
   const lastSubmittedPromptRef = useRef<string>('');
   const prevStatusRef = useRef(status);
@@ -141,6 +137,7 @@ export default function ChatPanel({
           isWaitingForResponse={inFlight && !isInterruptActive}
           status={status}
           isBackendReady={isBackendReady ?? conversation.isBackendReady}
+          threadId={threadId}
         />
 
         <Announcer status={status} announcement={announcement} notice={notice} />

@@ -39,3 +39,23 @@ Clicking "Retry" on `LoadingOverlay` invokes a `retryStartup()` callback in `use
 **Rationale**: Prevents `Sidebar` and `MessageInput` from firing requests against an unready backend on initial mount and rendering premature inline errors behind the loading overlay (FR-040, FR-042).
 **Alternatives considered**:
 - Intercepting all `fetch` calls globally (Rejected: Over-engineered and violates Constitution Principle I "no speculative abstraction").
+
+## R7: RAG Document Upload Transport & Uploading-to-Processing Transition
+**Decision**: Implement `uploadRagDocument` in `lib/conversation/backend.ts` targeting `POST /rag/upload` with `multipart/form-data` (`file`, `thread_id`) using `XMLHttpRequest` (with an injectable factory/transport for deterministic unit tests). Use `xhr.upload.onprogress` to report upload byte progress during the `Uploading` state (`Uploading document...`) and `xhr.upload.onload` to transition immediately to the `Processing` state (`Preparing document for use...`) while awaiting the server's HTTP response.
+**Rationale**: Standard `fetch` does not expose request upload progress callbacks across browsers. `XMLHttpRequest.upload` natively separates byte transmission (`upload.onprogress` / `upload.onload`) from server-side document ingestion time (time between `upload.onload` and `xhr.onload`), satisfying FR-045 and FR-046 with zero third-party dependencies (Constitution Principle I).
+**Alternatives considered**:
+- `fetch` with a synthetic `setTimeout` timer to switch from `Uploading` to `Processing` (Rejected: Inaccurate on slow networks or fast local uploads).
+- Two-endpoint polling architecture (Rejected: Backend uses a single synchronous `POST /rag/upload` request returning `{ status: "ready" | "duplicate" }`).
+
+## R8: Client-Side File Validation & Centralized Copy
+**Decision**: Validate files in `lib/conversation/limits.ts` (and surface all user-facing messages from `lib/ui/copy.ts`) prior to enabling or dispatching `POST /rag/upload`. Enforce non-empty size (`file.size > 0`), maximum size `3 MB` (`3 * 1024 * 1024` bytes), allowed extensions (`.pdf`, `.txt`, `.md`, `.docx`, case-insensitive), and active `threadId` presence.
+**Rationale**: Satisfies FR-043 and Constitution Principle I & III by validating user/file input at the boundary and keeping all user-facing copy in `lib/ui/copy.ts`. Checking normalized file extensions alongside MIME types avoids browser quirks where `.md` files report an empty `file.type`.
+**Alternatives considered**:
+- Relying only on `input[accept]` attribute (Rejected: Users can bypass `accept` in the OS dialog or via drag-and-drop).
+
+## R9: Per-Thread Upload State Scoping in `MessageInput`
+**Decision**: Store RAG upload state inside `MessageInput` as a dictionary keyed by `threadId` (`Record<string, ThreadRagUploadState>`). Bind in-flight upload callbacks to the `threadId` that initiated the upload.
+**Rationale**: Satisfies FR-047 and Section 8 of `docs/rag_frontend_implementation_plan.md`. If a user switches conversations while an upload is in progress, the newly opened conversation displays its own upload state (`idle` by default), and when the in-flight upload completes, its `Ready`, `Already Added`, or `Failed` status is recorded against the originating `threadId` only.
+**Alternatives considered**:
+- Single global upload state in `MessageInput` (Rejected: Would leak completion/duplicate banners into unrelated conversations when switching threads).
+- Aborting in-flight uploads on conversation switch (Rejected during clarification in favor of Option A).

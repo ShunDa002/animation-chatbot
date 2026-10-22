@@ -180,7 +180,31 @@
 
 ---
 
-## Phase 11: Polish & Cross-Cutting Concerns
+## Phase 11: User Story 9 - RAG Document Upload via Attachment Button (Priority: P1)
+
+**Goal**: A user clicks the Attachment (`+`) button inside `MessageInput` to open an inline upload panel, selects or drops a `.pdf`, `.txt`, `.md`, or `.docx` file up to `3 MB`, reviews its summary, uploads it to `POST /rag/upload` with distinct `Uploading` and `Processing` feedback, and receives `Ready`, informational `Already Added` (duplicate content), or `Failed` (with **Retry**) status scoped to the active `threadId`.
+
+**Independent Test**: Clicking the Attachment (`+`) button toggles the inline upload panel. Invalid files (`0` bytes, unsupported extension, `> 3 MB`) are rejected client-side with zero network calls. Valid files transition `Selected` → `Uploading` (`Uploading document...`) → `Processing` (`Preparing document for use...`) → `Ready` or `Already Added` (or `Failed` with **Retry**), while disabling chat `Send` during `Uploading`/`Processing` and isolating state per `threadId`.
+
+### Tests for User Story 9
+
+- [x] T050 [P] [US9] Add unit tests for RAG file validation (`validateRagFile`, `formatFileSize`, `.pdf`/`.txt`/`.md`/`.docx` allowlist, `0`-byte and `> 3 MB` rejection, missing `threadId`) in `tests/unit/limits.test.ts`
+- [x] T051 [P] [US9] Add unit tests for `uploadRagDocument` (`POST /rag/upload` `FormData` fields, `Uploading` progress and `upload.onload` `Processing` callback, `ready` vs. `already_added` duplicate mapping, and safe error translation) in `tests/unit/backend.test.ts`
+- [x] T052 [P] [US9] Add component tests for the Attachment (`+`) inline RAG upload panel (panel toggle, file picker & drag-and-drop selection, client-side validation errors, `Uploading` → `Processing` → `Ready` / `Already Added` / `Failed` states, chat `Send` disabled while uploading/processing, retry/replace/remove actions, and per-`threadId` state isolation) in `tests/components/MessageInput.test.tsx`
+
+### Implementation for User Story 9
+
+- [x] T053 [P] [US9] Add centralized RAG document upload copy tokens (panel guidance, status strings, action labels, and validation/error messages) in `lib/ui/copy.ts`
+- [x] T054 [US9] Implement `MAX_RAG_FILE_BYTES` (`3 MB`), `ALLOWED_RAG_EXTENSIONS` (`.pdf`, `.txt`, `.md`, `.docx`), `formatFileSize`, and `validateRagFile` in `lib/conversation/limits.ts`
+- [x] T055 [P] [US9] Implement `uploadRagDocument`, `RagUploadError`, `UploadRagDocumentOptions`, and `RagUploadResult` for `POST /rag/upload` using `XMLHttpRequest` (`upload.onprogress` and `upload.onload` transitions) in `lib/conversation/backend.ts`
+- [x] T056 [US9] Implement the Attachment (`+`) button toggle, inline RAG upload panel (file picker, drag-and-drop dropzone, file summary card, **Upload**/**Replace**/**Remove**/**Retry**/**Dismiss** actions, `role="status"` announcements), chat `Send` gating during `Uploading`/`Processing`, and per-`threadId` state dictionary in `components/MessageInput.tsx`
+- [x] T057 [US9] Pass active `threadId` prop from `ChatPanel` into `MessageInput` in `components/ChatPanel.tsx`
+
+**Checkpoint**: At this point, User Story 9 (RAG Document Upload) should be fully functional and independently testable
+
+---
+
+## Phase 12: Polish & Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
@@ -190,6 +214,8 @@
 - [x] T037 [P] Clean up any mock/stub data used during Phase 2
 - [x] T048 [P] Update E2E and mock backend fixtures to handle `GET /health/ready` and verify startup readiness gating in `tests/fixtures/mock-backend.ts` and `tests/e2e/message-input.spec.ts`
 - [x] T049 Run full Vitest unit and component test suite to validate readiness polling, startup gating, and retry flows in `tests/`
+- [x] T058 [P] Add mock `/rag/upload` endpoint support in `tests/fixtures/mock-backend.ts` and E2E test coverage for RAG document upload in `tests/e2e/message-input.spec.ts`
+- [x] T059 Run full Vitest unit and component test suite to validate RAG document upload and ensure zero regressions across `tests/`
 
 ---
 
@@ -199,10 +225,10 @@
 
 - **Setup (Phase 1)**: No dependencies - can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories (Phase 3+)**: All depend on Foundational phase completion
+- **User Stories (Phase 3–11)**: All depend on Foundational phase completion
   - User stories can then proceed in parallel (if staffed)
   - Or sequentially in priority order (P1 → P2 → P3)
-- **Polish (Final Phase)**: Depends on all desired user stories being complete
+- **Polish (Phase 12)**: Depends on all desired user stories being complete
 
 ### User Story Dependencies
 
@@ -214,29 +240,28 @@
 - **User Story 6 (P1)**: Depends on User Story 1 (requires Send button)
 - **User Story 7 (P1)**: Independent. Modifies `Sidebar.tsx`.
 - **User Story 8 (P1)**: Depends on User Story 7.
+- **User Story 9 (P1)**: Depends on User Story 1 (Attachment button inside `components/MessageInput.tsx`). Within US9: `T053` (`lib/ui/copy.ts`) → `T054` (`lib/conversation/limits.ts`) and `T055` (`lib/conversation/backend.ts`) → `T056` (`components/MessageInput.tsx`) → `T057` (`components/ChatPanel.tsx`).
 
 ### Parallel Opportunities
 
-- Phase 6 (US4), Phase 7 (US5), Phase 9 (US7) can run in parallel with the `ChatInput` phases (US1-3, US6).
-- Within User Story 4 (Readiness Check):
-  - Test tasks `T038`, `T039`, and `T040` can be authored in parallel.
-  - Implementation tasks `T041` (`lib/conversation/backend-readiness.ts`), `T044` (`components/Sidebar.tsx`), `T045` (`components/MessageInput.tsx` / `components/ChatPanel.tsx`), and `T046` (`components/LoadingOverlay.tsx`) touch disjoint files and can be executed in parallel.
+- Phase 6 (US4), Phase 7 (US5), Phase 9 (US7), and Phase 11 (US9) can run in parallel with other phases.
+- Within User Story 9 (RAG Document Upload):
+  - Test tasks `T050` (`tests/unit/limits.test.ts`), `T051` (`tests/unit/backend.test.ts`), and `T052` (`tests/components/MessageInput.test.tsx`) touch disjoint files and can be authored in parallel.
+  - Implementation tasks `T053` (`lib/ui/copy.ts`) and `T055` (`lib/conversation/backend.ts`) can start in parallel; once `T053` finishes, `T054` (`lib/conversation/limits.ts`) and `T055` can run in parallel before `T056` (`components/MessageInput.tsx`).
 
 ---
 
-## Parallel Example: User Story 4 (Backend Readiness Check)
+## Parallel Example: User Story 9 (RAG Document Upload)
 
 ```bash
-# Launch unit & component test tasks for User Story 4 in parallel:
-Task: "T038 [P] [US4] Add unit tests for waitForBackendReady in tests/unit/backend-readiness.test.ts"
-Task: "T039 [P] [US4] Add unit tests for two-phase startup orchestration in tests/unit/useConversation.test.ts"
-Task: "T040 [P] [US4] Add component tests for startup request gating in tests/components/Sidebar.test.tsx, tests/components/MessageInput.test.tsx, and tests/components/LoadingOverlay.test.tsx"
+# Launch unit & component test tasks for User Story 9 in parallel:
+Task: "T050 [P] [US9] Add unit tests for RAG file validation in tests/unit/limits.test.ts"
+Task: "T051 [P] [US9] Add unit tests for uploadRagDocument in tests/unit/backend.test.ts"
+Task: "T052 [P] [US9] Add component tests for the Attachment (+) inline RAG upload panel in tests/components/MessageInput.test.tsx"
 
-# Launch independent module & component readiness gating tasks in parallel:
-Task: "T041 [P] [US4] Implement waitForBackendReady and BackendReadinessError in lib/conversation/backend-readiness.ts"
-Task: "T044 [P] [US4] Gate initial GET /conversations fetch on isBackendReady prop in components/Sidebar.tsx"
-Task: "T045 [P] [US4] Gate initial POST /models fetch on isBackendReady prop in components/MessageInput.tsx"
-Task: "T046 [P] [US4] Update LoadingOverlay timeout handling in components/LoadingOverlay.tsx"
+# Launch independent module implementation tasks in parallel:
+Task: "T053 [P] [US9] Add centralized RAG document upload copy tokens in lib/ui/copy.ts"
+Task: "T055 [P] [US9] Implement uploadRagDocument for POST /rag/upload in lib/conversation/backend.ts"
 ```
 
 ---
@@ -258,3 +283,4 @@ Task: "T046 [P] [US4] Update LoadingOverlay timeout handling in components/Loadi
 3. Add User Story 2 & 3 (ChatInput Morph) → Test independently
 4. Add User Story 7 & 8 (Sidebar & History) → Test independently
 5. Add User Story 4, 5, 6 (Loading, HITL, Stop) → Test independently
+6. Add User Story 9 (RAG Document Upload on Attachment Button) → Test independently

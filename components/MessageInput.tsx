@@ -7,10 +7,20 @@ import {
   isSendable,
   MAX_INPUT_CHARACTERS,
   remainingCharacters,
+  validateRagFile,
+  formatFileSize,
+  getRagFileExtension,
+  type ThreadRagUploadState,
 } from '@/lib/conversation/limits';
 import { copy } from '@/lib/ui/copy';
 import type { ConversationStatus } from '@/lib/conversation/useConversation';
-import { fetchModels } from '@/lib/conversation/backend';
+import {
+  fetchModels,
+  uploadRagDocument,
+  type UploadRagDocumentOptions,
+  type RagUploadResult,
+  RagUploadError,
+} from '@/lib/conversation/backend';
 
 export interface MessageInputProps {
   /** Callback invoked when the user submits a message via Enter key or Send button. */
@@ -41,6 +51,14 @@ export interface MessageInputProps {
   onModelChange?: (model: string) => void;
   /** Defaults to true. When false during initial startup, holds back POST /models until ready (FR-040) */
   isBackendReady?: boolean;
+  /** Active conversation thread identifier for RAG file upload association (FR-043, FR-047) */
+  threadId?: string | null;
+  /** Optional upload implementation override for deterministic component testing */
+  uploadFn?: (
+    threadId: string,
+    file: File,
+    options?: UploadRagDocumentOptions,
+  ) => Promise<RagUploadResult>;
 }
 
 export type Props = MessageInputProps;
@@ -49,12 +67,25 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
 
 export const STORAGE_KEY_DRAFT = 'chat_input_draft';
 
+const INITIAL_UPLOAD_STATE: ThreadRagUploadState = {
+  status: 'idle',
+  file: null,
+  fileName: null,
+  fileTypeLabel: null,
+  fileSizeBytes: null,
+  progress: null,
+  statusMessage: null,
+  originalFilename: null,
+};
+
 /**
- * The composer (FR-022, FR-003, D13).
+ * The composer (FR-022, FR-003, D13, US9).
  *
  * The draft lives in this component's own state (or controlled value), which is what makes it survive a re-render of the
  * log above it (constitution III). It is also cached in sessionStorage so unsubmitted drafts
  * survive page reloads (FR-024).
+ *
+ * Integrates RAG document upload on the Attachment (+) button (FR-005, FR-043-FR-047).
  */
 export default function MessageInput({
   onSubmit,
@@ -71,6 +102,8 @@ export default function MessageInput({
   selectedModel: controlledModel,
   onModelChange,
   isBackendReady = true,
+  threadId,
+  uploadFn = uploadRagDocument,
 }: Props) {
   const isControlled = typeof value === 'string';
   const [internalDraft, setInternalDraft] = useState('');
@@ -140,11 +173,22 @@ export default function MessageInput({
   }, [externalModels, isBackendReady]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isMountedRef = useRef(false);
   const remaining = remainingCharacters(currentDraft);
   const atLimit = atCharacterLimit(currentDraft);
   const counterId = useId();
   const inputId = useId();
+  const uploadPanelId = useId();
+
+  // RAG document upload state per-thread (FR-047)
+  const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadsByThread, setUploadsByThread] = useState<Record<string, ThreadRagUploadState>>({});
+
+  const activeThreadKey = threadId ?? '__default__';
+  const currentUpload = uploadsByThread[activeThreadKey] ?? INITIAL_UPLOAD_STATE;
+  const isUploading = currentUpload.status === 'uploading' || currentUpload.status === 'processing';
 
   // Sync draft to sessionStorage on update
   useEffect(() => {
@@ -186,7 +230,13 @@ export default function MessageInput({
   };
 
   const isConnecting = status === 'connecting';
-  const effectiveReason = disabledReason ?? (isConnecting ? copy.connecting : null);
+  const effectiveReason =
+    disabledReason ??
+    (isUploading
+      ? copy.ragUploadInProgressReason
+      : isConnecting
+        ? copy.connecting
+        : null);
 
   const isMultiline = currentDraft.includes('\n') || currentDraft.length > 36;
   const isTextareaDisabled = Boolean(disabled && !isWaitingForResponse && status !== 'waiting' && !isStreaming);
@@ -228,7 +278,16 @@ export default function MessageInput({
 
   function submit(): void {
     const handleSend = onSubmit ?? onSend;
-    if (disabled || isWaitingForResponse || isConnecting || !isSendable(currentDraft) || !handleSend) return;
+    if (
+      disabled ||
+      isWaitingForResponse ||
+      isConnecting ||
+      isUploading ||
+      !isSendable(currentDraft) ||
+      !handleSend
+    ) {
+      return;
+    }
     if (selectedModel) {
       handleSend(currentDraft, selectedModel);
     } else {
@@ -248,6 +307,158 @@ export default function MessageInput({
     }
   }
 
+  // File selection & validation handler (FR-043)
+  const processSelectedFile = (file: File | null | undefined) => {
+    const validation = validateRagFile(file, threadId);
+    if (!validation.valid) {
+      setUploadsByThread((prev) => ({
+        ...prev,
+        [activeThreadKey]: {
+          status: 'failed',
+          file: validation.file ?? null,
+          fileName: validation.file ? validation.file.name : null,
+          fileTypeLabel: validation.file
+            ? getRagFileExtension(validation.file.name).replace('.', '').toUpperCase()
+            : null,
+          fileSizeBytes: validation.file ? validation.file.size : null,
+          progress: null,
+          statusMessage: validation.error,
+          originalFilename: null,
+        },
+      }));
+      return;
+    }
+
+    setUploadsByThread((prev) => ({
+      ...prev,
+      [activeThreadKey]: {
+        status: 'selected',
+        file: validation.file,
+        fileName: validation.file.name,
+        fileTypeLabel: validation.extension.replace('.', '').toUpperCase(),
+        fileSizeBytes: validation.file.size,
+        progress: null,
+        statusMessage: null,
+        originalFilename: null,
+      },
+    }));
+  };
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    processSelectedFile(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (!isUploading) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    if (isUploading) return;
+    const file = event.dataTransfer.files?.[0];
+    processSelectedFile(file);
+  };
+
+  const handleRemoveFile = () => {
+    setUploadsByThread((prev) => ({
+      ...prev,
+      [activeThreadKey]: INITIAL_UPLOAD_STATE,
+    }));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!currentUpload.file || isUploading) return;
+    const fileToUpload = currentUpload.file;
+    const targetThreadKey = activeThreadKey;
+    const targetThreadId = threadId ?? 'default-thread';
+
+    // Transition to uploading state
+    setUploadsByThread((prev) => ({
+      ...prev,
+      [targetThreadKey]: {
+        ...prev[targetThreadKey],
+        status: 'uploading',
+        progress: 0,
+        statusMessage: copy.ragStatusUploading,
+      },
+    }));
+
+    try {
+      const result = await uploadFn(targetThreadId, fileToUpload, {
+        onUploadProgress: (percent) => {
+          setUploadsByThread((prev) => {
+            const existing = prev[targetThreadKey];
+            if (!existing || existing.status !== 'uploading') return prev;
+            return {
+              ...prev,
+              [targetThreadKey]: {
+                ...existing,
+                progress: percent,
+              },
+            };
+          });
+        },
+        onProcessingStart: () => {
+          setUploadsByThread((prev) => {
+            const existing = prev[targetThreadKey];
+            if (!existing) return prev;
+            return {
+              ...prev,
+              [targetThreadKey]: {
+                ...existing,
+                status: 'processing',
+                statusMessage: copy.ragStatusProcessing,
+              },
+            };
+          });
+        },
+      });
+
+      const isDuplicate = result.status === 'already_added' || result.duplicate;
+      setUploadsByThread((prev) => ({
+        ...prev,
+        [targetThreadKey]: {
+          ...prev[targetThreadKey],
+          status: isDuplicate ? 'already_added' : 'ready',
+          statusMessage: isDuplicate ? copy.ragStatusDuplicate : copy.ragStatusReady,
+          originalFilename: result.originalFilename,
+        },
+      }));
+    } catch (err: unknown) {
+      const userMessage =
+        err instanceof RagUploadError
+          ? err.userMessage
+          : err instanceof Error && err.message
+            ? err.message
+            : copy.ragErrorGeneric;
+
+      setUploadsByThread((prev) => ({
+        ...prev,
+        [targetThreadKey]: {
+          ...prev[targetThreadKey],
+          status: 'failed',
+          statusMessage: userMessage,
+        },
+      }));
+    }
+  };
+
   return (
     <form
       className="composer flex flex-col gap-1.5 shrink-0 mt-auto justify-end w-full"
@@ -256,6 +467,194 @@ export default function MessageInput({
         submit();
       }}
     >
+      {/* Inline RAG Document Upload Panel (FR-005, FR-044-FR-047, US9) */}
+      {isUploadPanelOpen && (
+        <div
+          id={uploadPanelId}
+          data-testid="rag-upload-panel"
+          className="rag-upload-panel w-full bg-[#181a24] border border-[#2d3142] rounded-2xl p-3 sm:p-4 mb-1 flex flex-col gap-2.5 shadow-xl transition-all duration-200 text-white"
+          role="region"
+          aria-label={copy.ragPanelTitle}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs sm:text-sm font-semibold text-white tracking-wide">
+              {copy.ragPanelTitle}
+            </span>
+            <button
+              type="button"
+              aria-label={copy.ragClosePanelLabel}
+              onClick={() => setIsUploadPanelOpen(false)}
+              className="p-1 rounded-full text-[var(--text-muted)] hover:text-white hover:bg-[#232736] transition-colors cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <p className="text-[11px] sm:text-xs text-[var(--text-muted)] m-0 leading-relaxed">
+            {copy.ragScopeNotice} {copy.ragSupportedFormatsNotice}
+          </p>
+
+          {/* Hidden native file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt,.md,.docx"
+            tabIndex={-1}
+            className="hidden"
+            data-testid="rag-file-input"
+            onChange={handleFileInputChange}
+          />
+
+          {/* Dropzone view when idle or failed without file */}
+          {(currentUpload.status === 'idle' || (!currentUpload.file && currentUpload.status === 'failed')) && (
+            <div
+              data-testid="rag-dropzone"
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
+                isDragging
+                  ? 'border-blue-500 bg-blue-500/10'
+                  : 'border-[#383d54] hover:border-[#4d5370] bg-[#13151d]/70'
+              }`}
+            >
+              <svg
+                className="w-6 h-6 mx-auto mb-1.5 text-[var(--text-muted)]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+              <p className="text-xs text-[var(--text-muted)] mb-2 m-0">{copy.ragDropzonePrompt}</p>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+                className="px-3 py-1 text-xs rounded-full bg-[#232736] hover:bg-[#2d3246] text-white font-medium transition-colors cursor-pointer"
+              >
+                {copy.ragBrowseLabel}
+              </button>
+            </div>
+          )}
+
+          {/* File summary view when a file is staged/uploading/complete/failed */}
+          {currentUpload.file && (
+            <div className="flex flex-col gap-2">
+              <div
+                data-testid="rag-file-summary"
+                className="flex items-center justify-between p-2.5 rounded-xl bg-[#13151d] border border-[#2d3142]"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 text-blue-300 border border-blue-700/50 uppercase shrink-0">
+                    {currentUpload.fileTypeLabel || 'DOC'}
+                  </span>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-medium text-white truncate" title={currentUpload.fileName ?? ''}>
+                      {currentUpload.fileName}
+                    </span>
+                    <span className="text-[10px] text-[var(--text-muted)]">
+                      {currentUpload.fileSizeBytes !== null ? formatFileSize(currentUpload.fileSizeBytes) : ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!isUploading && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-xs text-[var(--text-muted)] hover:text-white px-2 py-1 rounded hover:bg-[#232736] transition-colors cursor-pointer"
+                      >
+                        {copy.ragReplaceActionLabel}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveFile}
+                        className="text-xs text-rose-400 hover:text-rose-300 px-2 py-1 rounded hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      >
+                        {copy.ragRemoveActionLabel}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress bar during uploading */}
+              {currentUpload.status === 'uploading' && (
+                <div className="w-full bg-[#232736] rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-150"
+                    style={{ width: `${currentUpload.progress ?? 0}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Status and Error banners */}
+          {currentUpload.statusMessage && (
+            <div
+              data-testid="rag-status-banner"
+              role={currentUpload.status === 'failed' ? 'alert' : 'status'}
+              className={`p-2 rounded-xl text-xs flex items-center justify-between gap-2 ${
+                currentUpload.status === 'failed'
+                  ? 'bg-rose-950/50 border border-rose-800/60 text-rose-300'
+                  : currentUpload.status === 'ready'
+                    ? 'bg-emerald-950/50 border border-emerald-800/60 text-emerald-300'
+                    : currentUpload.status === 'already_added'
+                      ? 'bg-blue-950/50 border border-blue-800/60 text-blue-300'
+                      : 'bg-[#232736] text-[var(--text-muted)]'
+              }`}
+            >
+              <span className="flex-1 min-w-0">{currentUpload.statusMessage}</span>
+              {currentUpload.status === 'failed' && currentUpload.file && (
+                <button
+                  type="button"
+                  onClick={handleUpload}
+                  className="px-2.5 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white font-medium shrink-0 cursor-pointer transition-colors"
+                >
+                  {copy.ragRetryActionLabel}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Upload submit button when file is in selected state */}
+          {currentUpload.status === 'selected' && (
+            <div className="flex justify-end mt-0.5">
+              <button
+                type="button"
+                onClick={handleUpload}
+                disabled={isUploading}
+                data-testid="rag-upload-submit-btn"
+                className="px-4 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold cursor-pointer shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {copy.ragUploadActionLabel}
+              </button>
+            </div>
+          )}
+
+          {/* Accessible live region for screen readers */}
+          <div role="status" aria-live="polite" className="sr-only">
+            {currentUpload.statusMessage || ''}
+          </div>
+        </div>
+      )}
+
       <div
         className={`composer-box relative flex ${isMultiline
           ? 'flex-col gap-2 p-3 rounded-2xl'
@@ -303,7 +702,14 @@ export default function MessageInput({
               type="button"
               disabled={isActionsDisabled}
               aria-label={copy.attachmentLabel}
-              className="p-1.5 sm:p-2 rounded-full text-[var(--text-muted)] hover:text-white hover:bg-[var(--bubble-visitor)]/60 transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-expanded={isUploadPanelOpen}
+              aria-controls={uploadPanelId}
+              onClick={() => setIsUploadPanelOpen((prev) => !prev)}
+              className={`p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                isUploadPanelOpen
+                  ? 'text-white bg-[#232736]'
+                  : 'text-[var(--text-muted)] hover:text-white hover:bg-[var(--bubble-visitor)]/60'
+              }`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -365,7 +771,13 @@ export default function MessageInput({
               <button
                 type="submit"
                 aria-label={copy.sendLabel}
-                disabled={disabled || isWaitingForResponse || isConnecting || !isSendable(currentDraft)}
+                disabled={
+                  disabled ||
+                  isWaitingForResponse ||
+                  isConnecting ||
+                  isUploading ||
+                  !isSendable(currentDraft)
+                }
                 className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center shrink-0 shadow-sm"
               >
                 <span className="sr-only">{copy.sendLabel}</span>
@@ -382,7 +794,7 @@ export default function MessageInput({
         <span id={counterId} className={atLimit ? 'at-limit text-[var(--danger)] font-medium' : undefined}>
           {atLimit ? copy.atCharacterLimit : copy.charactersRemaining(remaining)}
         </span>
-        {(disabled || isConnecting) && effectiveReason ? <span>{effectiveReason}</span> : null}
+        {(disabled || isConnecting || isUploading) && effectiveReason ? <span>{effectiveReason}</span> : null}
       </div>
     </form>
   );

@@ -24,7 +24,7 @@ test.describe('Chat panel thinking indicator (T130, FR-014, FR-040)', () => {
   test.beforeEach(async ({ request, page }) => {
     await resetStub(request);
     await page.goto('/');
-    await expect(page.getByRole('img', { name: /Aria/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('img', { name: /REM/i })).toBeVisible({ timeout: 5000 });
   });
 
   test('Shows thinking dots in chat panel during wait and does not render a speech bubble (FR-040)', async ({ page }) => {

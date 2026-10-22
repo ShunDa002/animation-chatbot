@@ -12,7 +12,7 @@ import { expect, test } from '@playwright/test';
 test.describe('Layout and responsive behaviour (T119, FR-001, FR-003, D14)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('img', { name: /Aria/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('img', { name: /REM/i })).toBeVisible({ timeout: 5000 });
   });
 
   test('Renders sidebar and character area with bottom 50% chat overlay on desktop (FR-001, D14)', async ({

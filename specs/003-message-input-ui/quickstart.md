@@ -1,6 +1,6 @@
 # Validation & Quickstart: message-input-ui
 
-This guide describes how to validate the interactive message input and new chat functionality manually or via tests.
+This guide describes how to validate the interactive message input, startup readiness, new chat, and RAG document upload functionality manually or via tests.
 
 ## Prerequisites
 
@@ -44,19 +44,31 @@ This guide describes how to validate the interactive message input and new chat 
 3. **Observe:** The white loading page (`public/assets/loader.gif`) remains visible while `GET /health/ready` is polled with exponential backoff + jitter. Neither `POST /threads`, `GET /conversations`, nor `POST /models` is called while `/health/ready` is pending.
 4. Start the backend (or make `GET /health/ready` return `200 OK`).
 5. **Observe:** Polling stops immediately on the first `200 OK`, `POST /threads` (with a 10s timeout), `GET /conversations`, and `POST /models` are triggered, and once `threadId` returns, the loading overlay smoothly fades out.
-6. Simulate a permanent `404` on `GET /health/ready` (or let the 120s readiness deadline / 10s `POST /threads` timeout expire).
-7. **Observe:** Polling stops and the loading page displays a generic error message (with no HTTP status code) and a "Retry" button. Clicking "Retry" restarts the sequence from `GET /health/ready` with a fresh 120s deadline.
+
+## Scenario 5: RAG Document Upload via Attachment Button
+
+**Steps:**
+1. Click the Attachment (`+`) button inside `MessageInput`.
+2. **Observe:** An inline upload panel toggles open above the composer bar showing supported formats (`.pdf`, `.txt`, `.md`, `.docx`), the `3 MB` maximum size limit, and the conversation scope notice.
+3. Select or drag-and-drop an invalid file (e.g., `.exe`, `0`-byte file, or a `> 3 MB` file).
+4. **Observe:** Client-side validation immediately rejects the file with an actionable error message and zero network requests to `POST /rag/upload`.
+5. Select or drag-and-drop a valid file (e.g., `guide.pdf`, `120 KB`).
+6. **Observe:** The panel enters `Selected` state showing `guide.pdf`, `PDF`, `120 KB`, along with **Upload**, **Replace**, and **Remove** controls.
+7. Click **Upload**.
+8. **Observe:** Duplicate upload clicks and chat `Send` are disabled; the status displays `Uploading document...` during byte transfer, transitions to `Preparing document for use...` once bytes finish uploading, and upon `200 OK` displays `Document is ready. You can now ask questions about it.` (or `This document is already available in this conversation.` when the backend reports `status: "duplicate"`).
+9. Switch to another conversation in the sidebar or click "New Chat".
+10. **Observe:** The upload status remains scoped to the conversation where the upload occurred and does not leak into the newly opened conversation.
 
 ## Automated Validation
 
 Run the unit, component, and E2E tests to validate these scenarios automatically:
 
 ```bash
-# Run unit tests for backend readiness polling, backoff, timeouts, and startup gating
-npm run test tests/unit/backend-readiness.test.ts tests/unit/useConversation.test.ts
+# Run unit tests for backend readiness polling, RAG upload client, and limits validation
+npm run test tests/unit/backend-readiness.test.ts tests/unit/backend.test.ts tests/unit/useConversation.test.ts
 
-# Run component tests for the morphing logic and loading overlay
-npm run test ChatInput.test.tsx LoadingOverlay.test.tsx
+# Run component tests for MessageInput (including RAG file upload) and loading overlay
+npm run test tests/components/MessageInput.test.tsx tests/components/ChatInput.test.tsx tests/components/LoadingOverlay.test.tsx
 
 # Run E2E tests for the chat and sidebar flows
 npx playwright test e2e/message-input.spec.ts

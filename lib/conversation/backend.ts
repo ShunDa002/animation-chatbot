@@ -5,6 +5,8 @@
  * All backend configuration is via NEXT_PUBLIC_BACKEND_URL.
  */
 
+import { copy } from '@/lib/ui/copy';
+
 export {
   waitForBackendReady,
   BackendReadinessError,
@@ -298,4 +300,143 @@ export async function fetchHistory(threadId: string, signal?: AbortSignal): Prom
     return data;
   }
   return [];
+}
+
+/** RAG Document Upload Options and Types (API-010, FR-045, FR-046) */
+export interface UploadRagDocumentOptions {
+  signal?: AbortSignal;
+  onUploadProgress?: (percentage: number) => void;
+  onProcessingStart?: () => void;
+  xhrFactory?: () => XMLHttpRequest;
+}
+
+export interface RagUploadResult {
+  status: 'ready' | 'already_added';
+  duplicate: boolean;
+  filename?: string;
+  originalFilename?: string;
+  message?: string;
+}
+
+export class RagUploadError extends Error {
+  readonly status?: number;
+  readonly userMessage: string;
+
+  constructor(userMessage: string, status?: number, message?: string) {
+    super(message || userMessage);
+    this.name = 'RagUploadError';
+    this.userMessage = userMessage;
+    this.status = status;
+  }
+}
+
+/**
+ * Uploads a document file to POST /rag/upload using multipart/form-data with file and thread_id.
+ * Progress is reported via onUploadProgress, and onProcessingStart is triggered when upload bytes finish transferring.
+ */
+export function uploadRagDocument(
+  threadId: string,
+  file: File,
+  options?: UploadRagDocumentOptions,
+): Promise<RagUploadResult> {
+  return new Promise((resolve, reject) => {
+    const backendUrl = getBackendUrl();
+    const xhrFactory = options?.xhrFactory ?? (() => new XMLHttpRequest());
+    const xhr = xhrFactory();
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('thread_id', threadId);
+
+    xhr.open('POST', `${backendUrl}/rag/upload`);
+    xhr.setRequestHeader('Accept', 'application/json');
+
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        xhr.abort();
+        reject(new RagUploadError(copy.ragErrorNetwork, undefined, 'Upload aborted'));
+        return;
+      }
+      options.signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    }
+
+    if (xhr.upload) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+          options?.onUploadProgress?.(percent);
+        }
+      };
+
+      xhr.upload.onload = () => {
+        options?.onProcessingStart?.();
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText || '{}');
+          const isDuplicate = data.status === 'duplicate' || data.duplicate === true;
+          resolve({
+            status: isDuplicate ? 'already_added' : 'ready',
+            duplicate: isDuplicate,
+            filename: data.filename || file.name,
+            originalFilename: data.original_filename,
+            message: data.message,
+          });
+        } catch {
+          resolve({
+            status: 'ready',
+            duplicate: false,
+            filename: file.name,
+          });
+        }
+      } else {
+        let detail = '';
+        try {
+          const errData = JSON.parse(xhr.responseText || '{}');
+          detail = errData.detail || errData.message || '';
+        } catch {
+          // ignore parsing error
+        }
+
+        let userMsg: string = copy.ragErrorGeneric;
+        const lowerDetail = detail.toLowerCase();
+        if (xhr.status === 400 && (lowerDetail.includes('empty') || lowerDetail.includes('0 bytes'))) {
+          userMsg = copy.ragErrorEmptyFile;
+        } else if (
+          xhr.status === 413 ||
+          lowerDetail.includes('large') ||
+          lowerDetail.includes('size') ||
+          lowerDetail.includes('exceed')
+        ) {
+          userMsg = copy.ragErrorFileTooLarge;
+        } else if (
+          xhr.status === 415 ||
+          lowerDetail.includes('format') ||
+          lowerDetail.includes('extension') ||
+          lowerDetail.includes('unsupported')
+        ) {
+          userMsg = copy.ragErrorUnsupportedFormat;
+        } else if (lowerDetail.includes('unreadable') || lowerDetail.includes('no text')) {
+          userMsg = copy.ragErrorUnreadableText;
+        } else if (xhr.status === 502 || xhr.status === 503) {
+          userMsg = copy.ragErrorServiceUnavailable;
+        }
+
+        reject(new RagUploadError(userMsg, xhr.status, detail || `Upload failed with status ${xhr.status}`));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new RagUploadError(copy.ragErrorNetwork, xhr.status, 'Network error during upload'));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new RagUploadError(copy.ragErrorNetwork, xhr.status, 'Upload request timed out'));
+    };
+
+    xhr.send(formData);
+  });
 }

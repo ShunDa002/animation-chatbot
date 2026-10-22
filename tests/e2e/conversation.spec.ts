@@ -95,7 +95,7 @@ test.describe('V2: a full turn', () => {
     await send(page, '#delayed take your time');
 
     // FR-021: exactly one turn in flight, and the reason is visible to the visitor.
-    await expect(page.locator('.composer-meta')).toContainText('Wait for Aria to finish replying');
+    await expect(page.locator('.composer-meta')).toContainText('Wait for REM to finish replying');
 
     // Typing a fresh message does not re-enable the control while a turn is in flight.
     await page.getByRole('textbox').fill('let me interrupt');
@@ -193,7 +193,7 @@ test.describe('V4 in the browser: bad cues degrade', () => {
     // The endpoint forwards this one, because from its side the provider did emit content. The
     // client is what discovers there is nothing left once the cue is stripped (FR-019).
     await send(page, '#cue-only hello');
-    await expectNotice(page, /Aria did not have anything to say/);
+    await expectNotice(page, /REM did not have anything to say/);
     await expect(characterBubbles(page)).toHaveCount(0);
     await expectCanSendAgain(page);
   });
@@ -225,7 +225,7 @@ test.describe('the emotion seam, observed from outside (FR-020, SC-006)', () => 
     await send(page, '#emotion-sad bad news');
 
     // The text description is what a visitor who cannot see the character relies on.
-    await expect(page.getByRole('img', { name: /Aria.*sad/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*sad/i })).toBeVisible();
   });
 });
 
@@ -233,7 +233,7 @@ test.describe('failure paths leave a usable page (SC-009, FR-023)', () => {
   const failures: Array<[string, string, RegExp]> = [
     ['a provider error', '#provider-500 hi', /Something went wrong reaching the character/],
     ['a provider auth failure', '#provider-401 hi', /Something went wrong reaching the character/],
-    ['a cue-only reply', '#cue-only hi', /Aria did not have anything to say/],
+    ['a cue-only reply', '#cue-only hi', /REM did not have anything to say/],
   ];
 
   for (const [label, script, expected] of failures) {
@@ -254,7 +254,7 @@ test.describe('failure paths leave a usable page (SC-009, FR-023)', () => {
       expect(shown).not.toContain('stub_provider_code');
       expect(shown).not.toContain('upstream said');
       expect(shown).not.toMatch(/\b(401|500|502)\b/);
-      expect(shown).not.toContain('You are Aria');
+      expect(shown).not.toContain('You are REM');
 
       // And a following turn works without a reload.
       await send(page, 'try again');
@@ -280,7 +280,7 @@ test.describe('failure paths leave a usable page (SC-009, FR-023)', () => {
     await expect(characterBubbles(page).first()).toHaveText(/I started saying somethi/);
 
     // The watchdog ends the turn. Until it does, the partial text simply sits there.
-    await expectNotice(page, /Aria stopped mid-sentence/, 20_000);
+    await expectNotice(page, /REM stopped mid-sentence/, 20_000);
     await expect(characterBubbles(page).first()).toHaveText(/I started saying somethi/);
     await expectCanSendAgain(page);
   });
