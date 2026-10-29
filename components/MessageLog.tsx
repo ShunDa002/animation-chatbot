@@ -11,7 +11,12 @@ export interface MessageLogProps {
   status?: ConversationStatus;
   notice?: string | null;
   threadId?: string | null;
-  onResume?: (decision: 'yes' | 'no', interruptId?: string, targetMessageId?: string) => Promise<void>;
+  onResume?: (
+    decision: 'yes' | 'no',
+    interruptId?: string,
+    targetMessageId?: string,
+    model?: string,
+  ) => Promise<void>;
 }
 
 export type Props = MessageLogProps;
@@ -191,6 +196,7 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
                 <HitlConfirmation
                   threadId={threadId || ''}
                   interruptId={message.interruptId}
+                  model={message.model}
                   initialDecision={
                     message.interruptDecision === 'yes' || message.interruptDecision === 'no'
                       ? message.interruptDecision
@@ -202,7 +208,8 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
                   }
                   onResume={
                     onResume
-                      ? (decision) => onResume(decision, message.interruptId, message.id)
+                      ? (decision, model) =>
+                          onResume(decision, message.interruptId, message.id, model || message.model)
                       : undefined
                   }
                 />

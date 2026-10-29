@@ -103,14 +103,26 @@ export async function sendMessage(
 ): Promise<Response> {
   const backendUrl = getBackendUrl();
   const signal = signalOrOptions instanceof AbortSignal ? signalOrOptions : signalOrOptions?.signal;
-  const model = signalOrOptions instanceof AbortSignal ? modelParam : (signalOrOptions?.model ?? modelParam);
+  let model = signalOrOptions instanceof AbortSignal ? modelParam : (signalOrOptions?.model ?? modelParam);
+
+  if (!model && typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      model = window.sessionStorage.getItem('chat_selected_model') || undefined;
+    } catch {
+      // Ignore sessionStorage access errors
+    }
+  }
+  if (!model && process.env.NEXT_PUBLIC_DEFAULT_MODEL) {
+    model = process.env.NEXT_PUBLIC_DEFAULT_MODEL;
+  }
 
   const payload: Record<string, unknown> = {
     thread_id: threadId,
     user_input: userInput,
   };
-  if (model) {
-    payload.model = model;
+  const trimmedModel = typeof model === 'string' ? model.trim() : undefined;
+  if (trimmedModel) {
+    payload.model = trimmedModel;
   }
 
   return fetch(`${backendUrl}/chat`, {
@@ -144,15 +156,27 @@ export async function resumeChat(
 ): Promise<Response> {
   const backendUrl = getBackendUrl();
   const signal = signalOrOptions instanceof AbortSignal ? signalOrOptions : signalOrOptions?.signal;
-  const model = signalOrOptions instanceof AbortSignal ? modelParam : (signalOrOptions?.model ?? modelParam);
+  let model = signalOrOptions instanceof AbortSignal ? modelParam : (signalOrOptions?.model ?? modelParam);
+
+  if (!model && typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      model = window.sessionStorage.getItem('chat_selected_model') || undefined;
+    } catch {
+      // Ignore sessionStorage access errors
+    }
+  }
+  if (!model && process.env.NEXT_PUBLIC_DEFAULT_MODEL) {
+    model = process.env.NEXT_PUBLIC_DEFAULT_MODEL;
+  }
 
   const payload: Record<string, unknown> = {
     thread_id: threadId,
     interrupt_id: interruptId,
     resume: decision,
   };
-  if (model) {
-    payload.model = model;
+  const trimmedModel = typeof model === 'string' ? model.trim() : undefined;
+  if (trimmedModel) {
+    payload.model = trimmedModel;
   }
 
   return fetch(`${backendUrl}/chat/resume`, {
@@ -275,6 +299,7 @@ export interface HistoryMessageItem {
   interruptId?: string;
   interruptDecision?: string;
   createdAt?: string;
+  model?: string;
 }
 
 /**

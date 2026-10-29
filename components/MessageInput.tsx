@@ -80,6 +80,8 @@ const INITIAL_UPLOAD_STATE: ThreadRagUploadState = {
   originalFilename: null,
 };
 
+export const STORAGE_KEY_MODEL = 'chat_selected_model';
+
 /**
  * The composer (FR-022, FR-003, D13, US9).
  *
@@ -128,6 +130,14 @@ export default function MessageInput({
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const modelOptions = externalModels && externalModels.length > 0 ? externalModels : fetchedModels;
   const [internalSelectedModel, setInternalSelectedModel] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        const cached = sessionStorage.getItem(STORAGE_KEY_MODEL);
+        if (cached) return cached;
+      }
+    } catch {
+      // Ignore sessionStorage access errors
+    }
     return (externalModels && externalModels[0]) || '';
   });
 
@@ -139,6 +149,13 @@ export default function MessageInput({
 
   const handleModelChange = (newModel: string) => {
     setInternalSelectedModel(newModel);
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage && newModel) {
+        sessionStorage.setItem(STORAGE_KEY_MODEL, newModel);
+      }
+    } catch {
+      // Ignore sessionStorage access errors
+    }
     onModelChange?.(newModel);
   };
 
@@ -159,9 +176,17 @@ export default function MessageInput({
         const fetched = await fetchModels(abortController.signal);
         if (fetched && fetched.length > 0) {
           setFetchedModels(fetched);
-          setInternalSelectedModel((prev) =>
-            fetched.includes(prev) ? prev : (fetched[0] || ''),
-          );
+          setInternalSelectedModel((prev) => {
+            const next = fetched.includes(prev) ? prev : (fetched[0] || '');
+            try {
+              if (typeof window !== 'undefined' && window.sessionStorage && next) {
+                sessionStorage.setItem(STORAGE_KEY_MODEL, next);
+              }
+            } catch {
+              // Ignore sessionStorage access errors
+            }
+            return next;
+          });
         }
       } catch {
         // No dummy fallback - dynamic list only
@@ -343,6 +368,13 @@ export default function MessageInput({
       return;
     }
     if (selectedModel) {
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          sessionStorage.setItem(STORAGE_KEY_MODEL, selectedModel);
+        }
+      } catch {
+        // Ignore sessionStorage access errors
+      }
       handleSend(currentDraft, selectedModel);
     } else {
       handleSend(currentDraft);

@@ -7,11 +7,12 @@ export interface HitlConfirmationProps {
   threadId: string;
   interruptId?: string;
   initialDecision?: 'yes' | 'no' | null;
-  onResume?: (decision: 'yes' | 'no') => Promise<void>;
+  onResume?: (decision: 'yes' | 'no', model?: string) => Promise<void>;
   onSuccess?: (decision: 'yes' | 'no') => void;
   onError?: (error: Error) => void;
   prompt?: string;
   className?: string;
+  model?: string;
 }
 
 /**
@@ -30,6 +31,7 @@ export default function HitlConfirmation({
   onError,
   prompt = 'Action requires approval:',
   className = '',
+  model,
 }: HitlConfirmationProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,9 +47,13 @@ export default function HitlConfirmation({
 
     try {
       if (onResume) {
-        await onResume(chosenDecision);
+        if (model) {
+          await onResume(chosenDecision, model);
+        } else {
+          await onResume(chosenDecision);
+        }
       } else {
-        const response = await resumeChat(threadId, chosenDecision, interruptId);
+        const response = await resumeChat(threadId, chosenDecision, interruptId, undefined, model);
         if (!response.ok) {
           throw new Error(`Submission failed with status ${response.status}`);
         }

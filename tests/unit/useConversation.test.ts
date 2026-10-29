@@ -298,6 +298,87 @@ describe('useConversation with Tool Calls', () => {
       expect(result.current.status).toBe('idle');
     });
 
+    it('includes model in POST /chat/resume when original send specified a model', async () => {
+      const mockThreadResponse = new Response('thread-hitl-model', { status: 200 });
+
+      const encoder = new TextEncoder();
+      const interruptStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('{"type":"start","thread_id":"thread-hitl-model"}\n'));
+          controller.enqueue(
+            encoder.encode(
+              '{"type":"interrupt","thread_id":"thread-hitl-model","interrupt_id":"int-888","value":"Confirm action?","resumable":true}\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+      const resumeStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('{"type":"start","thread_id":"thread-hitl-model"}\n'));
+          controller.enqueue(encoder.encode('{"type":"token","content":"Action completed."}\n'));
+          controller.enqueue(encoder.encode('{"type":"done"}\n'));
+          controller.close();
+        },
+      });
+
+      (globalThis.fetch as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(mockReadyResponse())
+        .mockResolvedValueOnce(mockThreadResponse)
+        .mockResolvedValueOnce(
+          new Response(interruptStream, {
+            status: 200,
+            headers: { 'Content-Type': 'application/x-ndjson' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(resumeStream, {
+            status: 200,
+            headers: { 'Content-Type': 'application/x-ndjson' },
+          }),
+        );
+
+      const { result } = renderHook(() => useConversation());
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      await act(async () => {
+        result.current.send('Execute risky action', 'custom-model-abc');
+      });
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+
+      const assistantMessage = result.current.messages.find((m) => m.author === 'character');
+      expect(assistantMessage?.status).toBe('interrupted');
+      expect(assistantMessage?.interruptId).toBe('int-888');
+
+      await act(async () => {
+        await result.current.resume('yes', 'int-888', assistantMessage?.id);
+      });
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/chat/resume'),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            thread_id: 'thread-hitl-model',
+            interrupt_id: 'int-888',
+            resume: 'yes',
+            model: 'custom-model-abc',
+          }),
+        }),
+      );
+    });
+
     it('preserves interrupted message on resume failure allowing subsequent retry', async () => {
       const mockThreadResponse = new Response('thread-hitl', { status: 200 });
 

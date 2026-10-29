@@ -249,6 +249,32 @@ describe('lib/conversation/backend', () => {
       });
     });
 
+    it('falls back to sessionStorage chat_selected_model when model is not explicitly passed to resumeChat', async () => {
+      process.env.NEXT_PUBLIC_BACKEND_URL = 'http://127.0.0.1:8000';
+      sessionStorage.setItem('chat_selected_model', 'session-saved-model');
+      const mockResponse = { ok: true, status: 200 } as unknown as Response;
+      const fetchMock = vi.fn().mockResolvedValue(mockResponse);
+      globalThis.fetch = fetchMock;
+
+      await resumeChat('test-thread-123', 'yes', 'int-456');
+
+      expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:8000/chat/resume', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'accept': 'application/x-ndjson',
+        },
+        body: JSON.stringify({
+          thread_id: 'test-thread-123',
+          interrupt_id: 'int-456',
+          resume: 'yes',
+          model: 'session-saved-model',
+        }),
+        signal: undefined,
+      });
+      sessionStorage.removeItem('chat_selected_model');
+    });
+
     it('throws when network error occurs during resume', async () => {
       process.env.NEXT_PUBLIC_BACKEND_URL = 'http://127.0.0.1:8000';
       globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Connection reset'));

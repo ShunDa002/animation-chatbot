@@ -70,6 +70,7 @@ export interface Conversation {
     decision: 'yes' | 'no' | InterruptDecision,
     interruptId?: string,
     targetMessageId?: string,
+    model?: string,
   ): Promise<void>;
   stop: () => Promise<void>;
   isHistoryLoading?: boolean;
@@ -98,16 +99,19 @@ function noticeForStatus(status: number): {
 
 export const STORAGE_KEY_THREAD = 'chat_thread_id';
 export const STORAGE_KEY_MESSAGES = 'chat_messages';
+export const STORAGE_KEY_MODEL = 'chat_selected_model';
 
 function getInitialSession(): {
   messages: Message[];
   threadId: string | null;
   isRestored: boolean;
+  model?: string;
 } {
   try {
     if (typeof window !== 'undefined' && window.sessionStorage) {
       const storedThread = sessionStorage.getItem(STORAGE_KEY_THREAD);
       const storedMessages = sessionStorage.getItem(STORAGE_KEY_MESSAGES);
+      let storedModel = sessionStorage.getItem(STORAGE_KEY_MODEL) || undefined;
 
       if (storedThread) {
         let messages: Message[] = [];
@@ -141,7 +145,10 @@ function getInitialSession(): {
             // Ignore parse errors
           }
         }
-        return { messages, threadId: storedThread, isRestored: true };
+        if (!storedModel && messages.length > 0) {
+          storedModel = [...messages].reverse().find((m) => m.model)?.model;
+        }
+        return { messages, threadId: storedThread, isRestored: true, model: storedModel };
       }
     }
   } catch {
@@ -157,6 +164,7 @@ export function useConversation(): Conversation {
   const [threadId, setThreadId] = useState<string | null>(initialSession.threadId);
   const threadIdRef = useRef<string | null>(initialSession.threadId);
   const isRestoredRef = useRef(initialSession.isRestored);
+  const currentModelRef = useRef<string | undefined>(initialSession.model);
   const [isBackendReady, setIsBackendReady] = useState(false);
   const [startupRetryTrigger, setStartupRetryTrigger] = useState(0);
   const startupControllerRef = useRef<AbortController | null>(null);
@@ -351,6 +359,24 @@ export function useConversation(): Conversation {
 
       const text = draft.trim();
 
+      const effectiveModel =
+        model ||
+        currentModelRef.current ||
+        (typeof window !== 'undefined' && window.sessionStorage
+          ? sessionStorage.getItem(STORAGE_KEY_MODEL) || undefined
+          : undefined);
+
+      if (effectiveModel) {
+        currentModelRef.current = effectiveModel;
+        try {
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.setItem(STORAGE_KEY_MODEL, effectiveModel);
+          }
+        } catch {
+          // Ignore sessionStorage access errors
+        }
+      }
+
       if (isNewThreadUnsentRef.current && currentThreadId) {
         isNewThreadUnsentRef.current = false;
         if (typeof window !== 'undefined') {
@@ -373,6 +399,7 @@ export function useConversation(): Conversation {
         author: 'visitor',
         text,
         status: 'completed',
+        ...(effectiveModel ? { model: effectiveModel } : {}),
       };
       const replyId = nextId('character');
 
@@ -395,7 +422,7 @@ export function useConversation(): Conversation {
 
       void (async () => {
         try {
-          const response = await sendMessage(currentThreadId, text, controller.signal, model);
+          const response = await sendMessage(currentThreadId, text, controller.signal, effectiveModel);
 
           if (!response.ok || !response.body) {
             const mapped = noticeForStatus(response.status);
@@ -545,6 +572,7 @@ export function useConversation(): Conversation {
                         text: displayText,
                         status: 'interrupted',
                         interruptId: interruptEvent.interrupt_id,
+                        ...(effectiveModel ? { model: effectiveModel } : {}),
                       }
                       : message,
                   )
@@ -556,6 +584,7 @@ export function useConversation(): Conversation {
                       text: displayText,
                       status: 'interrupted',
                       interruptId: interruptEvent.interrupt_id,
+                      ...(effectiveModel ? { model: effectiveModel } : {}),
                     },
                   ];
               });
@@ -704,7 +733,12 @@ export function useConversation(): Conversation {
   );
 
   const resume = useCallback(
-    async (decision: 'yes' | 'no' | InterruptDecision, interruptId?: string, targetMessageId?: string) => {
+    async (
+      decision: 'yes' | 'no' | InterruptDecision,
+      interruptId?: string,
+      targetMessageId?: string,
+      model?: string,
+    ) => {
       const currentThreadId = threadIdRef.current;
       if (!currentThreadId) {
         throw new Error('Thread unavailable');
@@ -720,11 +754,26 @@ export function useConversation(): Conversation {
         messagesRef.current.find((m) => m.status === 'interrupted');
       const replyId = targetMsg?.id || nextId('character');
       const effectiveInterruptId = interruptId || targetMsg?.interruptId;
+      const effectiveModel =
+        model ||
+        targetMsg?.model ||
+        currentModelRef.current ||
+        (typeof window !== 'undefined' && window.sessionStorage
+          ? sessionStorage.getItem(STORAGE_KEY_MODEL) || undefined
+          : undefined);
+
+      if (effectiveModel) {
+        currentModelRef.current = effectiveModel;
+      }
 
       setMessages((current) =>
         current.map((message) =>
           message.id === replyId
-            ? { ...message, interruptDecision: decision }
+            ? {
+              ...message,
+              interruptDecision: decision,
+              ...(effectiveModel ? { model: effectiveModel } : {}),
+            }
             : message,
         ),
       );
@@ -733,7 +782,13 @@ export function useConversation(): Conversation {
       abortRef.current = controller;
 
       try {
-        const response = await resumeChat(currentThreadId, decision, effectiveInterruptId, controller.signal);
+        const response = await resumeChat(
+          currentThreadId,
+          decision,
+          effectiveInterruptId,
+          controller.signal,
+          effectiveModel,
+        );
 
         if (!response.ok || !response.body) {
           const mapped = noticeForStatus(response.status);
@@ -827,6 +882,7 @@ export function useConversation(): Conversation {
                     text: displayText,
                     status: 'interrupted',
                     interruptId: interruptEvent.interrupt_id,
+                    ...(effectiveModel ? { model: effectiveModel } : {}),
                   }
                   : message,
               ),
@@ -979,8 +1035,21 @@ export function useConversation(): Conversation {
               item.interruptDecision === 'yes' || item.interruptDecision === 'no'
                 ? item.interruptDecision
                 : undefined,
+            ...(item.model ? { model: item.model } : {}),
           };
         });
+
+        const lastLoadedModel = [...mappedMessages].reverse().find((m) => m.model)?.model;
+        if (lastLoadedModel) {
+          currentModelRef.current = lastLoadedModel;
+          try {
+            if (typeof window !== 'undefined' && window.sessionStorage) {
+              sessionStorage.setItem(STORAGE_KEY_MODEL, lastLoadedModel);
+            }
+          } catch {
+            // Ignore
+          }
+        }
 
         setMessages(mappedMessages);
         setThreadId(targetThreadId);

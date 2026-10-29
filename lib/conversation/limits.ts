@@ -31,6 +31,7 @@ export interface Message {
   toolCalls?: ToolCallRecord[];
   interruptId?: string;
   interruptDecision?: InterruptDecision;
+  model?: string;
 }
 
 /** How many characters the visitor may still type. Never negative. */
