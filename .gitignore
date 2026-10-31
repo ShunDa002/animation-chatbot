@@ -8,6 +8,7 @@ node_modules/
 out/
 build/
 dist/
+/dist/
 next-env.d.ts
 
 # Test output
@@ -16,19 +17,35 @@ coverage/
 test-results/
 .vitest/
 
-# Secrets - never commit any of these (constitution: Additional Constraints)
+# Secrets & Credentials - never commit any of these (constitution: Additional Constraints)
 .env
-.env*.local
-.env.local
-.env.production
-.env.development
-.env.test
-.env.test.local
+.env.*
+!.env.example
 *.pem
 *.key
+*.crt
+*.cer
+*.pfx
+*.p12
+*.pkcs12
+*credentials*.json
+service-account*.json
+serviceAccountKey*.json
+
+# Databases & Local Storage
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
 
 # Vercel
 .vercel
+
+# Cloudflare, Vinext & Wrangler
+.vinext/
+.cloudflare/
+.wrangler/
 
 # Logs & Caches
 *.log
@@ -73,6 +90,3 @@ blob-report/
 # Coding Agent Local Caches & Deprecated Tool Dirs
 .agents/**/.cache/
 .agents/**/logs/
-.vinext/
-.cloudflare/
-.wrangler/

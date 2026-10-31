@@ -126,4 +126,51 @@ describe('LoadingOverlay - User Story 4 (Loading State and Initialization)', () 
     });
     expect(screen.getByRole('button', { name: /retry/i })).toBeTruthy();
   });
+
+  it('uses default 130s safety timeout to avoid cutting off 120s readiness window (T046, FR-017)', () => {
+    const onRetry = vi.fn();
+    render(
+      <LoadingOverlay
+        isConnecting={true}
+        isGeneratingThread={false}
+        onRetry={onRetry}
+      />
+    );
+
+    // Fast-forward 120 seconds (the full readiness probe window)
+    act(() => {
+      vi.advanceTimersByTime(120000);
+    });
+    // Should still be showing loader, NOT timed out yet
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
+
+    // Fast-forward another 10 seconds to reach default 130s
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+    expect(screen.getByRole('button', { name: /retry/i })).toBeTruthy();
+  });
+
+  it('renders generic error copy when error prop is provided and triggers onRetry on click (FR-017)', () => {
+    const onRetry = vi.fn();
+    render(
+      <LoadingOverlay
+        isConnecting={false}
+        isGeneratingThread={false}
+        error="The backend service is unavailable. Please check your connection and try again."
+        onRetry={onRetry}
+      />
+    );
+
+    expect(
+      screen.getByText('The backend service is unavailable. Please check your connection and try again.')
+    ).toBeTruthy();
+    const retryBtn = screen.getByRole('button', { name: /retry/i });
+    expect(retryBtn).toBeTruthy();
+
+    act(() => {
+      retryBtn.click();
+    });
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
 });

@@ -5,6 +5,15 @@
  * All backend configuration is via NEXT_PUBLIC_BACKEND_URL.
  */
 
+import { copy } from '@/lib/ui/copy';
+
+export {
+  waitForBackendReady,
+  BackendReadinessError,
+  type ReadinessOptions,
+  type ReadinessResult,
+} from './backend-readiness';
+
 const DEFAULT_BACKEND_URL = 'http://127.0.0.1:8000';
 
 /**
@@ -19,30 +28,62 @@ export function getBackendUrl(): string {
   return envUrl.trim().replace(/\/+$/, '');
 }
 
+export interface CreateThreadOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
 /**
- * Creates a new conversation thread on the backend (FR-043).
+ * Creates a new conversation thread on the backend (FR-043, API-008).
  * Returns the UUID string assigned to this thread.
- * Throws on non-200 response or network error.
+ * Throws on non-200 response, timeout, or network error.
  */
-export async function createThread(): Promise<string> {
+export async function createThread(
+  signalOrOptions?: AbortSignal | CreateThreadOptions,
+): Promise<string> {
   const backendUrl = getBackendUrl();
-  const response = await fetch(`${backendUrl}/threads`, {
+  const signal = signalOrOptions instanceof AbortSignal ? signalOrOptions : signalOrOptions?.signal;
+  const timeoutMs = signalOrOptions instanceof AbortSignal ? undefined : signalOrOptions?.timeoutMs;
+
+  const hasTimeout = typeof timeoutMs === 'number' && timeoutMs > 0;
+  let controller: AbortController | undefined;
+  let timer: NodeJS.Timeout | null = null;
+  const abortCurrent = () => controller?.abort();
+
+  if (signal || hasTimeout) {
+    controller = new AbortController();
+    signal?.addEventListener('abort', abortCurrent, { once: true });
+    if (hasTimeout) {
+      timer = setTimeout(() => controller?.abort(), timeoutMs);
+    }
+  }
+
+  const init: RequestInit = {
     method: 'POST',
-  });
-
-  if (!response.ok) {
-    throw new Error(`Thread creation failed with status ${response.status}`);
+  };
+  if (controller) {
+    init.signal = controller.signal;
   }
 
-  console.log(await response);
-  const rawText = await response.text();
-  const threadId = rawText.replace(/^"|"$/g, '').trim();
+  try {
+    const response = await fetch(`${backendUrl}/threads`, init);
 
-  if (!threadId) {
-    throw new Error('Received empty thread id from backend');
+    if (!response.ok) {
+      throw new Error(`Thread creation failed with status ${response.status}`);
+    }
+
+    const rawText = await response.text();
+    const threadId = rawText.replace(/^"|"$/g, '').trim();
+
+    if (!threadId) {
+      throw new Error('Received empty thread id from backend');
+    }
+
+    return threadId;
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+    signal?.removeEventListener('abort', abortCurrent);
   }
-
-  return threadId;
 }
 
 export interface SendMessageOptions {
@@ -62,14 +103,26 @@ export async function sendMessage(
 ): Promise<Response> {
   const backendUrl = getBackendUrl();
   const signal = signalOrOptions instanceof AbortSignal ? signalOrOptions : signalOrOptions?.signal;
-  const model = signalOrOptions instanceof AbortSignal ? modelParam : (signalOrOptions?.model ?? modelParam);
+  let model = signalOrOptions instanceof AbortSignal ? modelParam : (signalOrOptions?.model ?? modelParam);
+
+  if (!model && typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      model = window.sessionStorage.getItem('chat_selected_model') || undefined;
+    } catch {
+      // Ignore sessionStorage access errors
+    }
+  }
+  if (!model && process.env.NEXT_PUBLIC_DEFAULT_MODEL) {
+    model = process.env.NEXT_PUBLIC_DEFAULT_MODEL;
+  }
 
   const payload: Record<string, unknown> = {
     thread_id: threadId,
     user_input: userInput,
   };
-  if (model) {
-    payload.model = model;
+  const trimmedModel = typeof model === 'string' ? model.trim() : undefined;
+  if (trimmedModel) {
+    payload.model = trimmedModel;
   }
 
   return fetch(`${backendUrl}/chat`, {
@@ -103,15 +156,27 @@ export async function resumeChat(
 ): Promise<Response> {
   const backendUrl = getBackendUrl();
   const signal = signalOrOptions instanceof AbortSignal ? signalOrOptions : signalOrOptions?.signal;
-  const model = signalOrOptions instanceof AbortSignal ? modelParam : (signalOrOptions?.model ?? modelParam);
+  let model = signalOrOptions instanceof AbortSignal ? modelParam : (signalOrOptions?.model ?? modelParam);
+
+  if (!model && typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      model = window.sessionStorage.getItem('chat_selected_model') || undefined;
+    } catch {
+      // Ignore sessionStorage access errors
+    }
+  }
+  if (!model && process.env.NEXT_PUBLIC_DEFAULT_MODEL) {
+    model = process.env.NEXT_PUBLIC_DEFAULT_MODEL;
+  }
 
   const payload: Record<string, unknown> = {
     thread_id: threadId,
     interrupt_id: interruptId,
     resume: decision,
   };
-  if (model) {
-    payload.model = model;
+  const trimmedModel = typeof model === 'string' ? model.trim() : undefined;
+  if (trimmedModel) {
+    payload.model = trimmedModel;
   }
 
   return fetch(`${backendUrl}/chat/resume`, {
@@ -135,7 +200,7 @@ export async function stopChat(
   signal?: AbortSignal,
 ): Promise<Response> {
   const backendUrl = getBackendUrl();
-  return fetch(`${backendUrl}/chat/stop`, {
+  const init: RequestInit = {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -144,8 +209,11 @@ export async function stopChat(
       thread_id: threadId,
       run_id: runId ?? null,
     }),
-    signal,
-  });
+  };
+  if (signal) {
+    init.signal = signal;
+  }
+  return fetch(`${backendUrl}/chat/stop`, init);
 }
 
 /**
@@ -231,6 +299,7 @@ export interface HistoryMessageItem {
   interruptId?: string;
   interruptDecision?: string;
   createdAt?: string;
+  model?: string;
 }
 
 /**
@@ -256,5 +325,170 @@ export async function fetchHistory(threadId: string, signal?: AbortSignal): Prom
     return data;
   }
   return [];
+}
+
+/** RAG Document Upload Options and Types (API-010, FR-045, FR-046) */
+export interface UploadRagDocumentOptions {
+  signal?: AbortSignal;
+  onUploadProgress?: (percentage: number) => void;
+  onProcessingStart?: () => void;
+  xhrFactory?: () => XMLHttpRequest;
+}
+
+export interface RagUploadResult {
+  status: 'ready' | 'already_added';
+  duplicate: boolean;
+  filename?: string;
+  originalFilename?: string;
+  message?: string;
+}
+
+export class RagUploadError extends Error {
+  readonly status?: number;
+  readonly userMessage: string;
+
+  constructor(userMessage: string, status?: number, message?: string) {
+    super(message || userMessage);
+    this.name = 'RagUploadError';
+    this.userMessage = userMessage;
+    this.status = status;
+  }
+}
+
+/**
+ * Uploads a document file to POST /rag/upload using multipart/form-data with file and thread_id.
+ * Progress is reported via onUploadProgress, and onProcessingStart is triggered when upload bytes finish transferring.
+ */
+export function uploadRagDocument(
+  threadId: string,
+  file: File,
+  options?: UploadRagDocumentOptions,
+): Promise<RagUploadResult> {
+  return new Promise((resolve, reject) => {
+    const backendUrl = getBackendUrl();
+    const xhrFactory = options?.xhrFactory ?? (() => new XMLHttpRequest());
+    const xhr = xhrFactory();
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('thread_id', threadId);
+
+    xhr.open('POST', `${backendUrl}/rag/upload`);
+    xhr.setRequestHeader('Accept', 'application/json');
+
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        xhr.abort();
+        reject(new RagUploadError(copy.ragErrorNetwork, undefined, 'Upload aborted'));
+        return;
+      }
+      options.signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    }
+
+    if (xhr.upload) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+          options?.onUploadProgress?.(percent);
+        }
+      };
+
+      xhr.upload.onload = () => {
+        options?.onProcessingStart?.();
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText || '{}');
+          const isDuplicate = data.status === 'duplicate' || data.duplicate === true;
+          resolve({
+            status: isDuplicate ? 'already_added' : 'ready',
+            duplicate: isDuplicate,
+            filename: data.filename || file.name,
+            originalFilename: data.original_filename,
+            message: data.message,
+          });
+        } catch {
+          resolve({
+            status: 'ready',
+            duplicate: false,
+            filename: file.name,
+          });
+        }
+      } else {
+        let detail = '';
+        try {
+          const errData = JSON.parse(xhr.responseText || '{}');
+          detail = errData.detail || errData.message || '';
+        } catch {
+          // ignore parsing error
+        }
+
+        let userMsg: string = copy.ragErrorGeneric;
+        const lowerDetail = detail.toLowerCase();
+        if (xhr.status === 400 && (lowerDetail.includes('empty') || lowerDetail.includes('0 bytes'))) {
+          userMsg = copy.ragErrorEmptyFile;
+        } else if (
+          xhr.status === 413 ||
+          lowerDetail.includes('large') ||
+          lowerDetail.includes('size') ||
+          lowerDetail.includes('exceed')
+        ) {
+          userMsg = copy.ragErrorFileTooLarge;
+        } else if (
+          xhr.status === 415 ||
+          lowerDetail.includes('format') ||
+          lowerDetail.includes('extension') ||
+          lowerDetail.includes('unsupported')
+        ) {
+          userMsg = copy.ragErrorUnsupportedFormat;
+        } else if (lowerDetail.includes('unreadable') || lowerDetail.includes('no text')) {
+          userMsg = copy.ragErrorUnreadableText;
+        } else if (xhr.status === 502 || xhr.status === 503) {
+          userMsg = copy.ragErrorServiceUnavailable;
+        }
+
+        reject(new RagUploadError(userMsg, xhr.status, detail || `Upload failed with status ${xhr.status}`));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new RagUploadError(copy.ragErrorNetwork, xhr.status, 'Network error during upload'));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new RagUploadError(copy.ragErrorNetwork, xhr.status, 'Upload request timed out'));
+    };
+
+    xhr.send(formData);
+  });
+}
+
+/**
+ * Loads the bundled sample resume PDF from `/resume.pdf` as a standard browser File object.
+ *
+ * @param path Optional asset URL path override (defaults to '/resume.pdf')
+ * @param fetchFnOrSignal Optional fetch implementation for testing or AbortSignal to cancel
+ * @param maybeSignal Optional AbortSignal when fetchFn is supplied
+ */
+export async function loadSampleResumeFile(
+  path: string = '/resume.pdf',
+  fetchFnOrSignal?: typeof fetch | AbortSignal,
+  maybeSignal?: AbortSignal,
+): Promise<File> {
+  const fetchFn = typeof fetchFnOrSignal === 'function' ? fetchFnOrSignal : fetch;
+  const signal =
+    fetchFnOrSignal && typeof fetchFnOrSignal !== 'function'
+      ? fetchFnOrSignal
+      : maybeSignal;
+
+  const response = signal ? await fetchFn(path, { signal }) : await fetchFn(path);
+  if (!response.ok) {
+    throw new Error(`Failed to load sample resume from ${path}: HTTP ${response.status}`);
+  }
+  const blob = await response.blob();
+  return new File([blob], 'resume.pdf', { type: 'application/pdf' });
 }
 

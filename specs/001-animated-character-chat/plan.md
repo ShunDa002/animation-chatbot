@@ -11,7 +11,7 @@ a language model replies as streaming text, and the character reacts with a matc
 expression. No accounts, no persistence, free-tier inference.
 
 This project is **frontend-only** (D15). The character is rendered by `pixi-live2d-display` over
-PixiJS v7, with the Cubism 2.1 Core runtime (for the new Remu model) vendored locally, alongside the Cubism 4 Core runtime. A
+PixiJS v7, with the Cubism 2.1 Core runtime (for the new REM model) vendored locally, alongside the Cubism 4 Core runtime. A
 separate FastAPI backend project handles provider credentials, persona instructions, rate limiting,
 and conversation context. The frontend communicates with it via two HTTP endpoints: `POST /threads`
 (returns a thread UUID on page load) and `POST /chat` (accepts `user_input` + `thread_id`, returns
@@ -30,7 +30,7 @@ the seam contract is [contracts/emotion-seam.md](./contracts/emotion-seam.md).
 **Primary Dependencies**: Next.js (App Router) - `react` / `react-dom` - `pixi.js` pinned to the v7
 line - `pixi-live2d-display` (cubism2 and cubism4 entry points). No server-side dependencies (`@upstash/redis`
 removed per D15).
-Vendored: Cubism 4 Core (`live2dcubismcore.min.js`), Cubism 2 Core (`live2d.js`), and the "Remu" sample model (`rem.json`, Cubism 2.1).
+Vendored: Cubism 4 Core (`live2dcubismcore.min.js`), Cubism 2 Core (`live2d.js`), and the "REM" sample model (`rem.json`, Cubism 2.1).
 
 **Styling**: Tailwind CSS v4 via `@tailwindcss/postcss` (D13). Utility classes in JSX for all
 layout, spacing, colour, and typography. `globals.css` retains only the Tailwind import, CSS custom
@@ -154,7 +154,7 @@ violations:
 
 **2026-09-27 — Cursor Tracking (FR-048)**: Added real-time cursor tracking (gaze, head orientation, body leaning) across the entire browser window. The tracking logic must respect touch devices (smooth return to center on release), pause during character reactions to prevent motion conflicts, and disable entirely when reduced motion is preferred (FR-014). This involves tracking `pointermove` on the `window` and calling `model.focus(x, y)`. No new principle violations.
 
-**2026-09-27 — Remu Model and Screenshot Update**: The model is switched to "Remu" (`rem.json`), a Cubism 2.1 model requiring `live2d.js` to be loaded in `layout.tsx`. Its motion arrays and part exclusivity files (`remu.physics.json`, `remu.pose.json`) are used with default settings. A new `still.png` screenshot must be captured using Playwright as a one-off script, substituting the old static fallback image.
+**2026-09-27 — REM Model and Screenshot Update**: The model is switched to "REM" (`rem.json`), a Cubism 2.1 model requiring `live2d.js` to be loaded in `layout.tsx`. Its motion arrays and part exclusivity files (`remu.physics.json`, `remu.pose.json`) are used with default settings. A new `still.png` screenshot must be captured using Playwright as a one-off script, substituting the old static fallback image.
 
 ## Project Structure
 

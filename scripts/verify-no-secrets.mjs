@@ -17,7 +17,7 @@ const CLIENT_DIRS = ['.next/static'];
 /** Strings that must never appear in anything shipped to a browser. */
 const FORBIDDEN = [
   // The persona, by its opening words and its cue instruction.
-  { pattern: 'You are Aria', why: 'persona text (FR-026)' },
+  { pattern: 'You are REM', why: 'persona text (FR-026)' },
   { pattern: 'Append exactly one emotional cue', why: 'cue instruction (FR-026)' },
   // Provider identity and endpoint.
   { pattern: 'api.groq.com', why: 'provider endpoint' },

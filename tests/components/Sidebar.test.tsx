@@ -209,4 +209,116 @@ describe('Sidebar - User Story 7 (Sidebar Conversations Fetching)', () => {
     );
     expect(btn.getAttribute('aria-current')).toBeNull();
   });
+
+  it('gates GET /conversations when isBackendReady is false, displaying skeleton until ready (FR-040)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [
+        {
+          id: 'conv-gated',
+          title: 'Gated Chat',
+          createdAt: '2026-10-08T10:00:00Z',
+        },
+      ],
+    });
+    globalThis.fetch = fetchMock;
+
+    const { rerender } = render(<Sidebar isBackendReady={false} />);
+
+    // While backend is not ready, skeleton is displayed and no network call is dispatched
+    expect(screen.getByTestId('sidebar-skeleton')).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Backend becomes ready
+    rerender(<Sidebar isBackendReady={true} />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Gated Chat')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('sidebar-skeleton')).toBeNull();
+  });
+
+  it('updates conversation and displays in sidebar when chat:new-conversation event is dispatched', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    });
+
+    render(<Sidebar />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No conversations')).toBeTruthy();
+    });
+
+    // Dispatch chat:new-conversation event
+    window.dispatchEvent(
+      new CustomEvent('chat:new-conversation', {
+        detail: {
+          id: 'thread-new-1',
+          threadId: 'thread-new-1',
+          title: 'First Question Title',
+          createdAt: '2026-10-30T03:00:00Z',
+          updatedAt: '2026-10-30T03:00:00Z',
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('No conversations')).toBeNull();
+      expect(screen.getByText('First Question Title')).toBeTruthy();
+    });
+
+    // Dispatching an update for the same thread updates title/timestamp and reorders
+    window.dispatchEvent(
+      new CustomEvent('chat:new-conversation', {
+        detail: {
+          id: 'thread-new-1',
+          threadId: 'thread-new-1',
+          title: 'First Question Title',
+          updatedAt: '2026-10-30T04:00:00Z',
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('First Question Title')).toBeTruthy();
+    });
+  });
+
+  it('clears error state when a new conversation event is received', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+    });
+
+    render(<Sidebar />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/failed to load conversations|request failed/i)).toBeTruthy();
+    });
+
+    window.dispatchEvent(
+      new CustomEvent('chat:new-conversation', {
+        detail: {
+          id: 'thread-recovered',
+          threadId: 'thread-recovered',
+          title: 'Saved Chat from New Event',
+          createdAt: '2026-10-30T03:00:00Z',
+          updatedAt: '2026-10-30T03:00:00Z',
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText(/failed to load conversations|request failed/i)).toBeNull();
+      expect(screen.getByText('Saved Chat from New Event')).toBeTruthy();
+    });
+  });
 });

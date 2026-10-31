@@ -6,7 +6,7 @@ import type { ConversationItem } from '@/components/Sidebar';
 
 describe('Sidebar Component (T120, FR-001, FR-003)', () => {
   const sampleConversations: ConversationItem[] = [
-    { id: 'conv-1', title: 'Catching up with Aria', date: 'Today' },
+    { id: 'conv-1', title: 'Catching up with REM', date: 'Today' },
     { id: 'conv-2', title: 'Live2D Animation Basics', date: 'Yesterday' },
   ];
 
@@ -24,7 +24,7 @@ describe('Sidebar Component (T120, FR-001, FR-003)', () => {
   it('renders passed past conversations list with titles and dates', () => {
     render(<Sidebar conversations={sampleConversations} />);
 
-    expect(screen.getByText('Catching up with Aria')).toBeTruthy();
+    expect(screen.getByText('Catching up with REM')).toBeTruthy();
     expect(screen.getByText('Today')).toBeTruthy();
     expect(screen.getByText('Live2D Animation Basics')).toBeTruthy();
     expect(screen.getByText('Yesterday')).toBeTruthy();
@@ -56,7 +56,7 @@ describe('Sidebar Component (T120, FR-001, FR-003)', () => {
       />,
     );
 
-    await userEvent.click(screen.getByText('Catching up with Aria'));
+    await userEvent.click(screen.getByText('Catching up with REM'));
     expect(onSelectConversation).toHaveBeenCalledWith('conv-1');
   });
 

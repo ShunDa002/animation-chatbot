@@ -476,7 +476,7 @@ a distinct, visibly different state during the wait and leaves it when text begi
   volume. Narrow viewports must remain usable but are not the primary target.
 - **Baseline target device**: a mid-range laptop with a modern browser and hardware-accelerated
   graphics. The performance targets in SC-003 are stated against that baseline.
-- **Character rig**: The "Remu" Live2D model is used (incorporating `remu.physics.json` for physics and `remu.pose.json` for part exclusivity). The model uses its default outfit and configuration as loaded. Its animations and expressions are inventoried before the emotional state set is fixed, so the set is derived from the rig rather than chosen up front.
+- **Character rig**: The "REM" Live2D model is used (incorporating `remu.physics.json` for physics and `remu.pose.json` for part exclusivity). The model uses its default outfit and configuration as loaded. Its animations and expressions are inventoried before the emotional state set is fixed, so the set is derived from the rig rather than chosen up front.
 - **Cost model**: inference runs on a free tier. A 6-message history window (FR-017, enforced by the
   backend), a 300-character input cap (FR-022), and a 150-request daily ceiling (FR-028) exist to
   keep usage inside that allowance. A shared

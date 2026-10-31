@@ -1,4 +1,4 @@
-# Aria — animated character chat
+# Rem — animated character chat
 
 A single-page portfolio demo: a rigged 2D character sits beside a chat panel, the visitor types, a
 language model replies as streaming text, and the character reacts with a matching animation and
@@ -26,13 +26,13 @@ The conversation, the inference proxy, and the accessibility surface are built a
 animated character is not** — it needs two license-gated manual downloads that cannot be automated.
 See [What is not built yet](#what-is-not-built-yet).
 
-| Area | State |
-|------|-------|
-| Chat, streaming, cue stripping, history window | Built, 180 tests green |
-| Inference proxy: validation, daily ceiling, timeout, failure mapping | Built and tested over real HTTP |
-| Accessibility: keyboard, live region, contrast, reduced motion | Built and tested |
-| Animated Live2D character | **Blocked** — needs the vendored rig |
-| Still-image fallback | Built; currently the whole character layer |
+| Area                                                                 | State                                      |
+| -------------------------------------------------------------------- | ------------------------------------------ |
+| Chat, streaming, cue stripping, history window                       | Built, 180 tests green                     |
+| Inference proxy: validation, daily ceiling, timeout, failure mapping | Built and tested over real HTTP            |
+| Accessibility: keyboard, live region, contrast, reduced motion       | Built and tested                           |
+| Animated Live2D character                                            | **Blocked** — needs the vendored rig       |
+| Still-image fallback                                                 | Built; currently the whole character layer |
 
 ## Requirements
 
@@ -127,7 +127,7 @@ output rather than trusting the arrangement.
 - **A client-side stall watchdog.** FR-034 forbids the endpoint cutting off a reply that has already
   begun streaming. But a provider that sends three words and then hangs forever would leave the turn
   in flight for the rest of the visit, while the spec's edge case for a stalled reply requires that
-  the partial text stays visible *and the visitor can send again*. No server behaviour can deliver
+  the partial text stays visible _and the visitor can send again_. No server behaviour can deliver
   the second half without violating FR-034, so `useConversation` gives up after 10 seconds of
   silence, keeps every character already shown, and ends the turn.
 
@@ -158,7 +158,7 @@ expression to persist after its motion ends, and holding a final animation frame
 Once those exist, the order of work is fixed and is spelled out in
 [`tasks.md`](specs/001-animated-character-chat/tasks.md): inventory the rig (T011) → finalise the
 `Emotion` union from what it can actually express (T013) → write the emotion map (T026) → wire the
-renderer (T028–T032). FR-006 requires the emotion set to be *derived* from the rig, so there is no
+renderer (T028–T032). FR-006 requires the emotion set to be _derived_ from the rig, so there is no
 shortcut past the inventory.
 
 **The `Emotion` union currently in `lib/emotion.ts` is provisional**, taken from research D4 and

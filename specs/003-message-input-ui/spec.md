@@ -20,7 +20,7 @@
 
 - Q: What should happen if the backend connection or threadId generation fails? → A: Display an error message with a "Retry" button on the white page.
 - Q: How should the transition from the loading page to the chatbot UI occur? → A: A smooth fade-out of the loading page and fade-in of the chatbot UI.
-- Q: Should there be a timeout limit for the loading state before showing an error message? → A: 30 seconds.
+- Q: Should there be a timeout limit for the loading state before showing an error message? → A: 30 seconds. *(Superseded by Session 2026-10-20: 120 s readiness deadline + 10 s thread-creation timeout.)*
 - Q: When an `interrupt` event is received, how should the main message input component behave while waiting for the user's approval? → A: Option A - The main input is disabled, and the approval (Yes/No) UI appears inline within the chat stream.
 - Q: After the user submits their approval decision during an `interrupt`, when should the main text input be re-enabled? → A: Option B - Only after the backend acknowledges the resume and streams the next `token` or `done` event.
 - Q: If the streaming response fails (e.g., receives an `error` event or unexpected HTTP closure), what should the message input component do? → A: Option A - Re-enable the input area and restore the user's last sent prompt so they can easily retry.
@@ -52,6 +52,37 @@
 - Q: Should the new, empty conversation appear in the sidebar immediately, or only after the user sends the first message? → A: Only after the user sends the first message (prevents cluttering the sidebar with empty chats).
 - Q: What happens if the request to fetch the new thread ID fails (e.g., due to a network error)? → A: Show an inline error message with a "Retry" button centered in the main chat area (consistent with history fetch failure).
 
+### Session 2026-10-20
+
+- Q: How long should startup keep retrying before showing the error message and "Retry" button (spec said 30 s; readiness doc says 120 s)? → A: Option B - `GET /health/ready` polling has its own 120-second overall deadline; once ready, `POST /threads` has its own separate 10-second timeout. (Supersedes the 30-second answer from Session 2026-10-01.)
+- Q: Which startup requests should wait until `/health/ready` returns `200` before they're sent? → A: Option A - All backend-dependent startup requests (`POST /threads`, `GET /conversations`, `POST /models`) are gated on readiness.
+- Q: If `/health/ready` returns a client error such as `400`, `401`, `403`, or `404`, should the loading page stop retrying or keep polling? → A: Option A - Stop immediately on non-retriable `4xx` (anything other than `408`, `425`, `429`) and show the error + "Retry" with a generic message; no status code is shown to the user.
+- Q: When the user clicks "Retry" on the loading page, should startup restart from `/health/ready` or resume at the failed step? → A: Option A - "Retry" always restarts from `/health/ready` with a fresh 120-second deadline, then runs the gated requests; any in-progress attempt is cancelled first so polling loops never overlap.
+- Q: Should the `/health/ready` check run only during app startup, or also before later requests such as "New Chat" or after mid-session failures? → A: Option A - Startup and the loading-page "Retry" only; mid-session requests keep their existing inline error and "Retry" behavior.
+
+### Session 2026-10-21
+
+- Q: What is the backend HTTP endpoint, request format, and response structure for uploading a RAG document to the active conversation? → A: Option A - `POST /rag/upload` with `multipart/form-data` (`file`, `thread_id`); returns `200 OK` JSON with `status: "ready" | "duplicate"` (or boolean `duplicate: true`) and `{ detail }` on error.
+- Q: Which document file formats and maximum file size should the client-side validator allow before uploading? → A: `.pdf`, `.txt`, `.md`, `.docx` up to `3 MB`.
+- Q: How should clicking the Attachment (`+`) button in `MessageInput.tsx` present the file selection and upload workflow? → A: Option A - Toggle an inline upload panel above `MessageInput` with pre-selection guidance, file picker + drag-and-drop zone, file review summary, and an explicit **Upload** button. *(Superseded by Session 2026-10-22: replaced with a two-option dropdown and top pill.)*
+- Q: How should the frontend transition from `Uploading` to `Processing` during `POST /rag/upload`, and should sending chat messages be blocked while an upload is in progress? → A: Option A - Transition `Uploading` → `Processing` when request bytes finish uploading (`upload.onload` while awaiting response), and disable chat `Send` while upload/processing is in flight.
+- Q: What should happen if the user switches to a different conversation (`threadId` changes) while a document upload is in progress or after it completes? → A: Option A - Scope upload state per `threadId` in memory so in-flight uploads finish for their originating `threadId` and status only displays in that conversation.
+
+### Session 2026-10-22
+
+- Q: When a user selects "Browse files" or "resume.pdf" from the dropdown menu, should the document upload begin automatically immediately? → A: Option A - Immediate upload: selecting a file or "resume.pdf" (loaded from public/resume.pdf) immediately triggers POST /rag/upload, displaying loading progress in the pill and the cancel button once ready.
+- Q: How should the Attachment (+) button behave while a document is already uploaded or currently in progress? → A: Option A - Disable the Attachment (+) button with reduced opacity and a tooltip stating the active file must be cancelled first.
+- Q: How should the document pill visually attach to the top of the message input? → A: Option A - Stacked directly above the top border of the message input container (left-aligned, attached to the composer wrapper).
+- Q: When the user clicks the cancel button on the document pill, what actions should occur? → A: Option A - Immediate cancel: aborts any in-flight upload, removes the pill, clears the attached file state, and re-enables the Attachment (+) button without a confirmation dialog.
+- Q: How should the UI display an upload failure if validation or network errors occur? → A: Option A - Error state in pill: the pill displays an error indicator with the error message/tooltip and a cancel/dismiss button.
+
+### Session 2026-10-30
+
+- Q: How should the message input box enforce a fixed single-line height and eliminate vertical scrolling while in the non-expanded state? → A: Option A - Fix height to exactly one line of text and set `overflow-y: hidden` while non-expanded (and during dynamic expansion up to 5 lines), enabling `overflow-y: auto` only when content exceeds 5 lines.
+
+
+
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Single-line Input Entry (Priority: P1)
@@ -64,24 +95,24 @@ A user begins typing a short message in the compact, pill-shaped input bar. All 
 
 **Acceptance Scenarios**:
 
-1. **Given** the message input is empty, **When** it renders, **Then** it displays as a dark-theme, pill-shaped single-line container with all actions inline.
-2. **Given** the user is typing, **When** the text remains on a single line, **Then** the layout remains inline horizontally without expanding.
+1. **Given** the message input is empty, **When** it renders, **Then** it displays as a dark-theme, pill-shaped single-line container with all actions inline, locking the textarea to a fixed height of exactly one line of text and suppressing vertical scrolling (`overflow-y: hidden`).
+2. **Given** the user is typing, **When** the text remains on a single line, **Then** the layout remains inline horizontally without expanding, maintaining the fixed single-line height with no vertical scrolling or inner scrollbars.
 
 ---
 
 ### User Story 2 - Multi-line Morph and Dual-Zone Layout (Priority: P1)
 
-A user types a longer message that exceeds 36 characters or wraps to a second line, causing the pill-shaped input to smoothly morph into a multi-line composition card. The layout restructures into an upper text composition area and a lower utility toolbar to keep controls predictable and prevent overlap. The input expands upward instead of downward to prevent overflowing outside the screen.
+A user types a longer message that exceeds 48 characters or wraps to a second line, causing the pill-shaped input to smoothly morph into a multi-line composition card. The layout restructures into an upper text composition area and a lower utility toolbar to keep controls predictable and prevent overlap. The input expands upward instead of downward to prevent overflowing outside the screen.
 
 **Why this priority**: The core adaptive mechanism of this UI redesign is the seamless transition to accommodate complex, multi-line prompts dynamically.
 
-**Independent Test**: Typing enough text to exceed 36 characters or wrap to a second line (or pressing Shift+Enter) triggers the morph into a rounded rectangle, and controls rearrange into a bottom footer.
+**Independent Test**: Typing enough text to exceed 48 characters or wrap to a second line (or pressing Shift+Enter) triggers the morph into a rounded rectangle, and controls rearrange into a bottom footer.
 
 **Acceptance Scenarios**:
 
-1. **Given** the user is typing in single-line mode, **When** the text exceeds 36 characters or a newline is entered, **Then** the container smoothly morphs into a rounded rectangular card with a fixed corner radius.
+1. **Given** the user is typing in single-line mode, **When** the text exceeds 48 characters or a newline is entered, **Then** the container smoothly morphs into a rounded rectangular card with a fixed corner radius.
 2. **Given** the container has morphed into a card, **When** the layout updates, **Then** the attachment button pins to the bottom-left, while the model selector, voice input, and send button pin to the bottom-right.
-3. **Given** the container expands upward, **When** new lines are added, **Then** it grows line-by-line dynamically while suppressing premature inner scrollbars.
+3. **Given** the container expands upward, **When** new lines are added, **Then** it grows line-by-line dynamically while suppressing vertical scrolling (`overflow-y: hidden`), introducing an inner vertical scrollbar (`overflow-y: auto`) only when the text exceeds exactly 5 lines.
 
 ---
 
@@ -101,17 +132,20 @@ While the user is typing and the component transitions between single-line and m
 
 ### User Story 4 - Loading State and Initialization (Priority: P1)
 
-A user opens the application and sees a full white page with a centrally displayed loader (`public/assets/loader.gif`) while the app connects to the backend and generates a threadId. Once initialization completes, the loading page smoothly fades out and the chatbot UI fades in. If initialization takes longer than 30 seconds or fails, an error message and a "Retry" button are displayed on the white page.
+A user opens the application and sees a full white page with a centrally displayed loader (`public/assets/loader.gif`) while the app waits for the backend to report ready (`GET /health/ready`) and then generates a threadId. Once initialization completes, the loading page smoothly fades out and the chatbot UI fades in. If the backend does not report ready within 120 seconds, if thread creation does not complete within 10 seconds, or if either step fails, an error message and a "Retry" button are displayed on the white page.
 
 **Why this priority**: Ensures users understand the application is working during initial startup and handles backend unavailability gracefully.
 
-**Independent Test**: Simulating a network delay shows the loader. Passing 30 seconds shows the retry button. Successful connection fades into the UI.
+**Independent Test**: Simulating an unreachable backend shows the loader while readiness polling retries. Passing 120 seconds without a `200` from `/health/ready` shows the retry button. A `POST /threads` that does not respond within 10 seconds after readiness shows the retry button. A ready backend plus a successful thread creation fades into the UI.
 
 **Acceptance Scenarios**:
 
-1. **Given** the application is loading, **When** the backend connection is pending, **Then** a white page with a centered loader is displayed.
-2. **Given** the backend connects successfully, **When** the threadId is generated, **Then** the loading page fades out and the chatbot UI fades in.
-3. **Given** the connection times out after 30 seconds or fails, **When** the error occurs, **Then** an error message and "Retry" button appear on the loading page.
+1. **Given** the application is loading, **When** the backend readiness check or thread creation is pending, **Then** a white page with a centered loader is displayed.
+2. **Given** `GET /health/ready` returns `200`, **When** the threadId is generated, **Then** the loading page fades out and the chatbot UI fades in.
+3. **Given** `GET /health/ready` has not yet returned `200`, **When** the app is starting, **Then** no `POST /threads`, `GET /conversations`, or `POST /models` request has been sent.
+4. **Given** `GET /health/ready` has not returned `200` within 120 seconds, **When** the readiness deadline expires, **Then** an error message and "Retry" button appear on the loading page.
+5. **Given** the backend has reported ready, **When** `POST /threads` fails or does not respond within 10 seconds, **Then** an error message and "Retry" button appear on the loading page.
+6. **Given** the loading page shows the error and "Retry" button, **When** the user clicks "Retry", **Then** the loader reappears and startup restarts from `GET /health/ready` with a fresh 120-second deadline, with no overlapping polling loops.
 
 ---
 
@@ -180,39 +214,73 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 
 ---
 
+### User Story 9 - RAG Document Upload via Attachment Dropdown and Sticky Pill (Priority: P1)
+
+A user clicks the Attachment (`+`) button inside `MessageInput` to open a simple dropdown menu offering exactly two options: `Browse files` and `resume.pdf`, separated by a horizontal divider line.
+When the user clicks `Browse files`, the browser's native file picker opens, allowing the user to select a single supported document (`.pdf`, `.txt`, `.md`, `.docx` up to `3 MB`). When the user clicks `resume.pdf`, the application automatically loads the pre-bundled `/resume.pdf` asset.
+Upon selection of either option, the system immediately starts document upload via `POST /rag/upload` and renders a document pill stacked directly above the top border of the message input container (left-aligned, attached to the composer wrapper so it moves smoothly with upward expansion).
+While uploading, the pill shows an in-flight loading indicator and progress. Once upload succeeds, the pill displays the file name and an explicit cancel button (`X`). If the backend detects duplicate content, the pill shows the file name with an informational success status. If validation rejects the file or the upload fails, the pill transitions to an alert/error styling displaying the error message/tooltip and a cancel/dismiss button.
+Only one document can be uploaded at a time. While a document is active or uploading, the Attachment (`+`) button is disabled (dimmed with an explanatory tooltip stating that the active file must be cancelled first). Clicking the cancel button on the pill immediately aborts any in-flight upload, removes the pill, clears the attached document state, and re-enables the Attachment (`+`) button so the user can upload a new file.
+
+**Why this priority**: Enables rapid, streamlined document-grounded AI responses through a minimal, non-intrusive dropdown and sticky pill interface without cluttering the screen with multi-step staging panels.
+
+**Independent Test**: Clicking Attachment opens the dropdown menu with `Browse files` and `resume.pdf` separated by a line. Selecting either option immediately begins upload and renders the sticky pill atop the message input. While attached, the Attachment button is disabled. Clicking the pill's cancel button clears the attachment, aborts any in-flight request, and re-enables the Attachment button.
+
+**Acceptance Scenarios**:
+
+1. **Given** an active conversation, **When** the user clicks the Attachment (`+`) button in `MessageInput`, **Then** a simple dropdown menu opens above the button displaying exactly two options: `Browse files` and `resume.pdf`, separated by a horizontal divider line.
+2. **Given** the dropdown menu is open, **When** the user selects `Browse files` and picks a valid document (or selects `resume.pdf`), **Then** the dropdown closes, document upload to `POST /rag/upload` begins automatically, and a document pill appears stacked directly above the top border of the message input container displaying the file name, in-flight progress/loading indicator, and a cancel button.
+3. **Given** an active or in-flight document in the pill, **When** the user views the message input, **Then** the Attachment (`+`) button is disabled with reduced opacity and an explanatory tooltip indicating the existing file must be cancelled before uploading another file.
+4. **Given** an active document pill (or an in-flight upload), **When** the user clicks the cancel button inside the pill, **Then** any in-flight request is immediately aborted, the pill is removed, the document context is cleared, and the Attachment (`+`) button is re-enabled.
+5. **Given** client-side validation rejects a file (unsupported format, `0` bytes, or exceeding `3 MB`) or the backend returns an upload error, **When** the failure occurs, **Then** the pill displays an alert/error state with an actionable message/tooltip and a cancel button allowing the user to dismiss it and choose another file.
+
+---
+
 ### Edge Cases
 
-- What happens when the user types a prompt longer than 5 lines? The container stops expanding vertically and introduces an inner scrollbar.
+- What happens when the user types a prompt longer than 5 lines? The container stops expanding vertically and introduces an inner vertical scrollbar (`overflow-y: auto`); while at 5 lines or fewer, vertical scrolling remains suppressed (`overflow-y: hidden`).
 - What happens when the user deletes text to return to a single line? The container should gracefully morph back to the pill-shaped inline layout.
-- How does the layout adapt on very narrow screens (e.g., mobile)?
+- How does the layout adapt on very narrow screens (e.g., mobile)? Below `640px`, the sidebar collapses into an off-canvas drawer toggled by a top-left hamburger menu button, while the message input compactly scales its padding and control spacing to fit the viewport.
 - What happens when the streaming response fails (e.g., error event or unexpected closure)? The input area is re-enabled and the user's last sent prompt is restored.
 - What happens if the `POST /chat/resume` request fails during a HITL interrupt? The system shows an inline error near the confirmation buttons and allows the user to retry.
 - What happens if the `POST /chat/stop` request fails? The frontend should abort the local streaming request anyway, mark the message as stopped, and ignore the server failure.
+- What happens if the backend is not yet reachable when the frontend starts (e.g., still running `init_db()`)? The loader stays visible while `GET /health/ready` is retried with backoff for up to 120 seconds; network errors and gateway errors are treated as "not ready yet".
+- What happens if `GET /health/ready` returns a permanent client error (e.g., `404` from a wrong `NEXT_PUBLIC_BACKEND_URL`)? Polling stops immediately and the loading page shows a generic error message with a "Retry" button, without the status code.
+- What happens on page reload when `sessionStorage` already contains a cached `threadId`? The frontend still polls `GET /health/ready` first (holding back `GET /conversations` and `POST /models` until `200 OK`), and once readiness succeeds, skips `POST /threads` and transitions directly to the ready state using the restored `threadId`.
+- What happens if a user selects an empty (`0`-byte) file, an unsupported file format (not `.pdf`, `.txt`, `.md`, or `.docx`), or a file larger than `3 MB`? Client-side validation immediately rejects the file before starting `POST /rag/upload` and displays an actionable error state inside the pill with a cancel/dismiss button.
+- What happens if a user uploads a file whose content has already been added to the active conversation (even under a different file name)? The backend returns a duplicate indicator on `POST /rag/upload`, and the UI treats it as an informational `Already Added` success (**This document is already available in this conversation.**) inside the pill rather than an error.
+- What happens if the user switches conversations (`threadId` changes) while a RAG document upload is in progress? The upload remains bound to the originating `threadId` in memory so completion (`Ready`, `Already Added`, or `Failed`) only appears when viewing that originating conversation and is never presented as belonging to the newly opened conversation.
+- What happens if the user selects `resume.pdf` from the dropdown? The application fetches the bundled static `public/resume.pdf` file as a blob and uploads it via `POST /rag/upload` associated with the active `thread_id`.
+- What happens if the user attempts to upload a second file while one is already active? The Attachment (`+`) button is disabled with a tooltip indicating the active document must be cancelled first.
+- What happens when the user clicks the cancel button on the document pill? Any in-flight `POST /rag/upload` request is aborted via `AbortController`, the pill is removed, and the composer is reset to accept a new attachment.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST render a dark-theme, pill-shaped input container in its default single-line state (less than or equal to 36 characters, no newlines).
+- **FR-001**: System MUST render a dark-theme, pill-shaped input container in its default single-line state (less than or equal to 48 characters, no newlines), locking the text area to a fixed height of exactly one line of text and setting vertical overflow to hidden (`overflow-y: hidden`).
 - **FR-002**: System MUST distribute the following controls inline horizontally in the default state: Attachment Action (+), Text Input Area, Model Selector, Voice Input, and Send Action.
 - **FR-003**: System MUST provide a dynamic model selector dropdown that fetches available models from the backend via a `POST /models` request.
 - **FR-004**: System MUST style the model selector dropdown to have no border, a transparent background, persistent white text color, and a `#232736` background color on hover.
-- **FR-005**: System MUST provide dummy UI buttons for Attachment and Voice Input (no backend integration required).
-- **FR-006**: System MUST dynamically morph the container into a rounded rectangular card with a two-tier layout when text exceeds 36 characters or spans multiple lines.
+- **FR-005**: System MUST integrate RAG document upload functionality on the Attachment button (`+`) inside `MessageInput` via a simple dropdown menu offering `Browse files` and `resume.pdf` separated by a divider line, displaying an attached document pill stacked at the top of the message input upon selection, while keeping the Voice Input button as a dummy UI control (no backend integration required for Voice Input). *(Updated in Session 2026-10-22)*
+- **FR-006**: System MUST dynamically morph the container into a rounded rectangular card with a two-tier layout when text exceeds 48 characters or spans multiple lines.
 - **FR-007**: System MUST anchor the Attachment button to the bottom-left, and the Model Selector, Voice Input, and Send button to the bottom-right when in the two-tier layout.
-- **FR-008**: System MUST adjust the text input height dynamically line-by-line as content grows, expanding upward to avoid pushing navigation elements abruptly.
+- **FR-008**: System MUST adjust the text input height dynamically line-by-line as content grows, expanding upward to avoid pushing navigation elements abruptly while maintaining `overflow-y: hidden` to prevent premature scrolling.
 - **FR-009**: System MUST NOT display standard browser border focus when the textarea is selected, but MUST provide an accessible alternative focus state (e.g., a subtle background shift) to maintain WCAG keyboard reachability compliance.
 - **FR-010**: System MUST style the Send Action as a high-contrast, solid circular button in cobalt blue with an upward arrow when active.
 - **FR-011**: System MUST maintain focus, selection range, and caret positioning uninterrupted during layout restructuring and height recalculations.
 - **FR-012**: System MUST submit the message when the `Enter` key is pressed, and add a newline when `Shift+Enter` is pressed.
 - **FR-026**: System MUST allow the user to immediately trigger the stop action by pressing the `Escape` key while the AI stream response is active.
-- **FR-013**: System MUST stop expanding the input area and introduce an inner scrollbar when the text exceeds exactly 5 lines.
+- **FR-013**: System MUST stop expanding the input area and introduce an inner vertical scrollbar (`overflow-y: auto`) when the text exceeds exactly 5 lines, keeping `overflow-y: hidden` for 1 through 5 lines.
 - **FR-014**: System MUST clear the input text and keep the text area enabled immediately after submission while waiting for the response.
 - **FR-024**: System MUST change the Send action button into a Stop button (styled as a solid square inside a circular button with a darker or red background) while the AI stream response is active, allowing the user to cancel generation.
 - **FR-025**: System MUST append a subtle "(Stopped)" text or icon to the end of the partially generated assistant message in the chat transcript when generation is successfully cancelled.
-- **FR-015**: System MUST display a full white loading page with a centered `public/assets/loader.gif` animation on initial load while waiting for backend connection and threadId generation.
-- **FR-016**: System MUST transition from the loading page to the chatbot UI using a smooth fade-out/fade-in animation once the backend connects and threadId is generated.
-- **FR-017**: System MUST display an error message and a "Retry" button on the loading page if the backend connection or threadId generation fails or times out after 30 seconds.
+- **FR-015**: System MUST display a full white loading page with a centered `public/assets/loader.gif` animation on initial load while waiting for backend readiness (`GET /health/ready`) and threadId generation.
+- **FR-016**: System MUST transition from the loading page to the chatbot UI using a smooth fade-out/fade-in animation once the backend reports ready and threadId is generated.
+- **FR-017**: System MUST display an error message and a "Retry" button on the loading page if (a) `GET /health/ready` has not returned `200` within a 120-second overall readiness deadline, (b) `GET /health/ready` returns a non-retriable client error (any `4xx` other than `408`, `425`, `429`), in which case polling stops immediately, or (c) after readiness succeeds, `POST /threads` fails or does not respond within 10 seconds. The two timeouts are independent; the 10-second thread-creation timeout starts only after readiness succeeds. The error message MUST be generic and actionable and MUST NOT show the HTTP status code.
+- **FR-040**: System MUST poll `GET /health/ready` on frontend startup (including reloads with a cached `threadId` in `sessionStorage`), retrying with capped exponential backoff and full jitter, and MUST stop polling as soon as a `200` response is received. No backend-dependent startup request (`POST /threads`, `GET /conversations`, `POST /models`) may be issued until readiness succeeds; if a `threadId` was restored from `sessionStorage`, `POST /threads` is skipped after readiness succeeds.
+- **FR-041**: System MUST restart the full startup sequence when the loading-page "Retry" button is clicked: cancel any in-progress readiness or thread-creation attempt, start `GET /health/ready` polling with a fresh 120-second deadline, then issue the gated requests. At most one readiness polling loop may be active at any time, and polling MUST be cancelled when the owning view unmounts.
+- **FR-042**: System MUST NOT run the readiness check outside initial startup and the loading-page "Retry". Mid-session requests ("New Chat" `POST /threads`, `POST /chat`, `GET /history/{thread_id}`, sidebar `GET /conversations` retries) keep their own inline error and "Retry" handling (FR-020, FR-030, FR-033, FR-039).
 - **FR-018**: System MUST disable the main text input area and Send action button when a HITL `interrupt` event is received, while the approval UI is handled inline within the chat stream.
 - **FR-019**: System MUST keep the main text input disabled after the user submits an approval response, and only re-enable it when the backend streams the next `token` or `done` event.
 - **FR-020**: System MUST re-enable the main text input area and restore the user's last submitted prompt if the streaming response fails (e.g., receives an `error` event or unexpected HTTP closure).
@@ -232,6 +300,11 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 - **FR-037**: System MUST immediately clear the current chat view and show a skeleton loader or spinner in the main chat area while waiting for the new thread ID.
 - **FR-038**: System MUST only add the new conversation to the sidebar list after the user sends the first message in the new thread.
 - **FR-039**: System MUST display an error message with a "Retry" button centered in the main chat area if the request to fetch a new thread ID fails.
+- **FR-043**: System MUST indicate supported document formats (`.pdf`, `.txt`, `.md`, `.docx`) and maximum file size (`3 MB`) before selection, and MUST validate selected files on the client before starting an upload: rejecting empty files (`0` bytes), unsupported file formats, files exceeding `3 MB` (`3 * 1024 * 1024` bytes), or attempts when no active conversation (`threadId`) is available, with actionable inline error messages.
+- **FR-044**: System MUST toggle a simple dropdown menu displaying exactly two options, `Browse files` and `resume.pdf` separated by a divider line, when the user clicks the Attachment (`+`) button. When `Browse files` is selected, the system MUST open the browser's native file picker; when `resume.pdf` is selected, the system MUST automatically load the static `/resume.pdf` asset. Upon file selection or choosing `resume.pdf`, the system MUST immediately initiate upload to `POST /rag/upload` and render a document pill stacked directly above the top border of the message input container (left-aligned, attached to the composer wrapper). Only one file can be uploaded at a time; while a file is uploaded or in progress, the Attachment (`+`) button MUST be disabled with reduced opacity and a tooltip explaining that the active file must be cancelled first.
+- **FR-045**: System MUST reflect the upload lifecycle (`Uploading`, `Processing`, `Ready`, `Already Added`, `Failed`) directly inside the document pill sticking to the top of the message input, showing in-flight loading progress during transfer/processing, the file name and cancel button on success, or an error state with a cancel/dismiss button on failure, without allowing duplicate concurrent submissions.
+- **FR-046**: System MUST transition from `Uploading` (`Uploading document...`, with measurable progress when available) to `Processing` (`Preparing document for use...`) when payload bytes finish transferring (`upload.onload`) and the client is awaiting the backend's `POST /rag/upload` ingestion response, MUST disable chat message submission (`Send`) while a document is in `Uploading` or `Processing` state, and MUST immediately abort in-flight requests, clear the attached file state, and remove the document pill when the user clicks the cancel button.
+- **FR-047**: System MUST scope RAG document upload state by `threadId` in memory so that if the user switches conversations while an upload is in progress or after it completes, the upload result (`Ready`, `Already Added`, or `Failed`) remains associated with the originating `threadId` and is never displayed as belonging to a different conversation.
 
 ### Integration & External Dependencies
 
@@ -243,10 +316,13 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 - **API-006**: The system MUST use `GET /conversations` to fetch the list of conversations. The endpoint returns a JSON array of objects formatted as: `[{ "id": string, "threadId": string, "title": string, "createdAt": DateTime, "updatedAt": DateTime }]`.
 - **API-007**: The system MUST use `GET /history/{thread_id}` to fetch the messages for a specific conversation. The endpoint returns a JSON array of objects formatted as: `[{ "id": string, "author": string, "text": string, "status": string, "toolCalls": string, "interruptId": string, "interruptDecision": string, "createdAt": DateTime }]`.
 - **API-008**: The system MUST use `POST /threads` to create a new thread and retrieve its ID.
+- **API-009**: The system MUST use `GET /health/ready` (no request body, browser caching disabled) as the startup readiness check. `200` means ready; `408`, `425`, `429`, `5xx` (including `503`), network errors, and per-request timeouts mean not yet ready and are retried; any other `4xx` is permanent and stops polling (see `docs/frontend_backend_readiness.md`).
+- **API-010**: The system MUST use `POST /rag/upload` with `multipart/form-data` containing `file` (the selected binary file) and `thread_id` (the active conversation's thread identifier) to upload a document for RAG ingestion. A `200 OK` JSON response indicates either newly indexed (`status: "ready"` or `duplicate: false`) or already available in the conversation (`status: "duplicate"` or `duplicate: true`), optionally returning `filename`, `original_filename`, and `message`; error responses (`4xx`/`5xx`) return JSON `{ "detail": string }` (which MUST be mapped to safe, actionable user-facing copy without exposing internal details).
 
 ### Key Entities
 
 - **MessageInput State**: Manages the current text value, line count, and active layout mode (single-line vs multi-line).
+- **RAG Document Upload State (Per-Thread)**: Tracks the upload lifecycle scoped by `threadId` (`idle`, `selected`, `uploading`, `processing`, `ready`, `already_added`, `failed`), the selected `File` metadata (plain-text file name, extension/MIME type, byte size), upload progress percentage, and user-facing status/error copy.
 
 ## Success Criteria *(mandatory)*
 
@@ -255,6 +331,9 @@ A user clicks on a past conversation item in the sidebar. The main chat area ent
 - **SC-001**: The component transitions from single-line to multi-line layout without dropping any keystrokes or losing focus.
 - **SC-002**: All controls (attachment, dynamic model selector, voice, send) are visually present and correctly positioned in both single-line and two-tier layouts.
 - **SC-003**: The send button is rendered prominently in cobalt blue when text is present.
+- **SC-004**: On startup, zero backend-dependent requests (`POST /threads`, `GET /conversations`, `POST /models`) are sent before `GET /health/ready` returns `200 OK`, and startup surfaces a generic retryable error (with no raw HTTP status codes) if readiness exceeds 120 seconds, returns a non-retriable `4xx`, or `POST /threads` exceeds 10 seconds.
+- **SC-005**: Users can open the two-option dropdown menu (`Browse files` and `resume.pdf`) via the Attachment (`+`) button, observe the attached document pill stacked directly above the top border of the message input with immediate upload upon selection, observe the Attachment button disabled while a file is active, cancel or remove the file at any time via the pill's cancel button, and see errors displayed clearly in the pill on failure.
+- **SC-006**: The message input textarea maintains a fixed single-line height with no vertical scrolling or visible scrollbars in its non-expanded state and during upward expansion up to 5 lines, activating vertical scrolling only when content exceeds 5 lines.
 
 ## Assumptions
 

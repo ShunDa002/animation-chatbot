@@ -21,7 +21,7 @@ test.describe('Failure matrix (T066, quickstart V7)', () => {
   test.beforeEach(async ({ request, page }) => {
     await resetStub(request);
     await page.goto('/');
-    await expect(page.getByRole('img', { name: /Aria/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('img', { name: /REM/i })).toBeVisible({ timeout: 5000 });
   });
 
   test('Provider returns 500: leaves plain message, character not stuck in thinking, sendable again', async ({
@@ -35,8 +35,8 @@ test.describe('Failure matrix (T066, quickstart V7)', () => {
     );
 
     // Character is not stuck in thinking state (SC-009)
-    await expect(page.getByRole('img', { name: /Aria.*thoughtful/i })).toBeHidden();
-    await expect(page.getByRole('img', { name: /Aria.*calm/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*thoughtful/i })).toBeHidden();
+    await expect(page.getByRole('img', { name: /REM.*calm/i })).toBeVisible();
 
     // No provider text / status code shown (FR-030)
     const characterTexts = await page.locator('.message.character').allTextContents();
@@ -98,7 +98,7 @@ test.describe('Failure matrix (T066, quickstart V7)', () => {
     );
 
     // Character not stuck in thinking
-    await expect(page.getByRole('img', { name: /Aria.*calm/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*calm/i })).toBeVisible();
   });
 
   test('Thread creation failure on load: disables sending and shows connection notice (FR-045)', async ({

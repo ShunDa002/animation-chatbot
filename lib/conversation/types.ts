@@ -1,5 +1,13 @@
-import type { Message, ConversationStatus, InterruptDecision } from '@/lib/conversation/useConversation';
-import type { EmotionState } from '@/lib/emotion';
+import type { Emotion } from '@/lib/emotion';
+import type { InterruptDecision, Message } from '@/lib/conversation/limits';
+
+export type ConversationStatus =
+  | 'connecting'
+  | 'idle'
+  | 'waiting'
+  | 'streaming'
+  | 'error'
+  | 'limited';
 
 export interface InterruptState {
   interruptId?: string;
@@ -32,7 +40,7 @@ export interface ConversationState {
   messages: Message[];
   status: ConversationStatus;
   threadId: string | null;
-  emotion: EmotionState;
+  emotion: Emotion;
   inFlight: boolean;
   notice: string | null;
   announcement: string | null;

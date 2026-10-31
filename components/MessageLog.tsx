@@ -11,7 +11,12 @@ export interface MessageLogProps {
   status?: ConversationStatus;
   notice?: string | null;
   threadId?: string | null;
-  onResume?: (decision: 'yes' | 'no', interruptId?: string, targetMessageId?: string) => Promise<void>;
+  onResume?: (
+    decision: 'yes' | 'no',
+    interruptId?: string,
+    targetMessageId?: string,
+    model?: string,
+  ) => Promise<void>;
 }
 
 export type Props = MessageLogProps;
@@ -147,7 +152,7 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
               style={{ animation: 'message-in 180ms cubic-bezier(0.2, 0, 0.2, 1)' }}
             >
               <span className="message-author block text-[0.7rem] uppercase tracking-wider text-slate-300 mb-0.5 [text-shadow:none]">
-                Aria
+                REM
               </span>
               {message.toolCalls && message.toolCalls.length > 0 && (
                 <ToolActivity toolCalls={message.toolCalls} />
@@ -191,10 +196,20 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
                 <HitlConfirmation
                   threadId={threadId || ''}
                   interruptId={message.interruptId}
-                  initialDecision={message.interruptDecision}
+                  model={message.model}
+                  initialDecision={
+                    message.interruptDecision === 'yes' || message.interruptDecision === 'no'
+                      ? message.interruptDecision
+                      : message.interruptDecision === true
+                        ? 'yes'
+                        : message.interruptDecision === false
+                          ? 'no'
+                          : null
+                  }
                   onResume={
                     onResume
-                      ? (decision) => onResume(decision, message.interruptId, message.id)
+                      ? (decision, model) =>
+                          onResume(decision, message.interruptId, message.id, model || message.model)
                       : undefined
                   }
                 />
@@ -223,11 +238,11 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
           <div
             className="message character thinking max-w-[85%] sm:max-w-[80%] rounded-2xl bg-[var(--bubble-character)]/60 border border-white/5 p-3 sm:px-4 sm:py-2.5 text-white drop-shadow-md text-sm sm:text-base leading-relaxed break-words shadow-sm transition-all"
             role="status"
-            aria-label="Aria is thinking"
+            aria-label="REM is thinking"
             style={{ animation: 'message-in 180ms cubic-bezier(0.2, 0, 0.2, 1)' }}
           >
             <span className="message-author block text-[0.7rem] uppercase tracking-wider text-slate-300 mb-1 [text-shadow:none]">
-              Aria
+              REM
             </span>
             <div
               className="flex items-center gap-1.5 py-1 px-1"
@@ -258,12 +273,12 @@ export default function MessageLog({ messages, status, notice, threadId, onResum
             </svg>
           </div>
           <div
-            className="message character error max-w-[85%] sm:max-w-[80%] rounded-2xl bg-[var(--bubble-character)]/60 border border-[var(--danger)]/50 p-3 sm:px-4 sm:py-2.5 text-[var(--danger)] drop-shadow-md text-sm sm:text-base leading-relaxed break-words shadow-sm transition-all font-medium"
+            className="message error max-w-[85%] sm:max-w-[80%] rounded-2xl bg-[var(--bubble-character)]/60 border border-[var(--danger)]/50 p-3 sm:px-4 sm:py-2.5 text-[var(--danger)] drop-shadow-md text-sm sm:text-base leading-relaxed break-words shadow-sm transition-all font-medium"
             role="alert"
             style={{ animation: 'message-in 180ms cubic-bezier(0.2, 0, 0.2, 1)' }}
           >
             <span className="message-author block text-[0.7rem] uppercase tracking-wider text-[var(--danger)] opacity-80 mb-1 [text-shadow:none] font-normal">
-              Aria
+              REM
             </span>
             <div className="message-text">
               {notice}

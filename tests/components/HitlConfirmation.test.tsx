@@ -115,6 +115,38 @@ describe('HitlConfirmation - User Story 5 (HITL Confirmation UI)', () => {
     expect(onSuccess).toHaveBeenCalledWith('no');
   });
 
+  it('submits model in POST /chat/resume payload when model prop is provided', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'resumed' }),
+    });
+    global.fetch = fetchMock;
+
+    render(
+      <HitlConfirmation
+        threadId="thread-123"
+        interruptId="int-456"
+        model="gemini-1.5-flash"
+      />
+    );
+
+    const yesBtn = screen.getByRole('button', { name: /yes|approve/i });
+    await user.click(yesBtn);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const firstCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, options] = firstCall;
+    const body = JSON.parse(options.body as string);
+    expect(body).toEqual({
+      thread_id: 'thread-123',
+      interrupt_id: 'int-456',
+      resume: 'yes',
+      model: 'gemini-1.5-flash',
+    });
+  });
+
   it('displays inline error and keeps buttons enabled when submission fails', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockResolvedValue({

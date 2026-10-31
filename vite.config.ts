@@ -17,22 +17,22 @@ export default defineConfig(({ command }) => {
       vinext(
         isBuild
           ? {
-            images: {
-              optimizer: imagesOptimizer(),
-            },
-          }
+              images: {
+                optimizer: imagesOptimizer(),
+              },
+            }
           : undefined,
       ),
 
       ...(isBuild
         ? [
-          cloudflare({
-            viteEnvironment: {
-              name: "rsc",
-              childEnvironments: ["ssr"],
-            },
-          }),
-        ]
+            cloudflare({
+              viteEnvironment: {
+                name: "rsc",
+                childEnvironments: ["ssr"],
+              },
+            }),
+          ]
         : []),
     ],
   };

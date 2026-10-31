@@ -3,7 +3,7 @@ import Script from 'next/script';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Aria - animated character chat',
+  title: 'REM - animated character chat',
   description:
     'A rigged 2D character that reacts to what it says. Type a message and watch her respond.',
 };

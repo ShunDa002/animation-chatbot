@@ -14,7 +14,7 @@ export default function LoadingOverlay({
   isConnecting,
   isGeneratingThread,
   onRetry,
-  timeoutMs = 30000,
+  timeoutMs = 130000,
   error = null,
 }: LoadingOverlayProps) {
   const [hasTimedOut, setHasTimedOut] = useState(false);

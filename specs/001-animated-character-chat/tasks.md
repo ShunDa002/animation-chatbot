@@ -1016,9 +1016,9 @@ Each step adds value without breaking previous steps.
 
 ---
 
-## Phase 16: Remu Model Integration and Screenshot
+## Phase 16: REM Model Integration and Screenshot
 
-**Purpose**: Switch the default character model to the newly vendored "Remu" (Cubism 2.1 format). Update the emotion mapping to use Remu's motions, include the Cubism 2.1 Core runtime, and generate a new fallback `still.png` screenshot using Playwright.
+**Purpose**: Switch the default character model to the newly vendored "REM" (Cubism 2.1 format). Update the emotion mapping to use REM's motions, include the Cubism 2.1 Core runtime, and generate a new fallback `still.png` screenshot using Playwright.
 
 **Depends on**: Phase 15.
 
@@ -1030,12 +1030,12 @@ Each step adds value without breaking previous steps.
 ### Implementation for Phase 16
 
 - [X] T144 Update `app/layout.tsx` to include the locally vendored Cubism 2 Core runtime (`/live2d/core/live2d.js`) via `<Script strategy="beforeInteractive">` alongside the Cubism 4 Core runtime.
-- [X] T145 Update `lib/character/emotionMap.ts` to configure `EMOTION_MAP`, `IDLE_MOTION_INDICES`, and `STRONG_EMOTION_MOTION_INDICES` for Remu's motions, aligning with the emotional categorization analysis (e.g., Happy -> `Live2D_remu02`, Angry -> `Live2D_remu03`).
+- [X] T145 Update `lib/character/emotionMap.ts` to configure `EMOTION_MAP`, `IDLE_MOTION_INDICES`, and `STRONG_EMOTION_MOTION_INDICES` for REM's motions, aligning with the emotional categorization analysis (e.g., Happy -> `Live2D_remu02`, Angry -> `Live2D_remu03`).
 - [X] T146 Update the default `modelUrl` in `components/CharacterStage.tsx` and tests (e.g. `tests/unit/renderer.test.ts`) to `/live2d/model/rem.json`.
-- [X] T147 [P] Create a standalone Playwright script in `scripts/capture-screenshot.ts` that navigates to the running app, waits for the Remu model to load and idle, captures a screenshot of the character canvas, and saves it to `public/live2d/still.png`.
+- [X] T147 [P] Create a standalone Playwright script in `scripts/capture-screenshot.ts` that navigates to the running app, waits for the REM model to load and idle, captures a screenshot of the character canvas, and saves it to `public/live2d/still.png`.
 - [X] T148 Full validation pass: run all tests (`npm test`, `npm run test:e2e`) to confirm the new model loads, the emotion maps validate, and the screenshot capture script executes successfully.
 
-**Checkpoint**: The app natively runs the Remu character model, responds emotionally with its unique motions, and features an up-to-date static fallback image.
+**Checkpoint**: The app natively runs the REM character model, responds emotionally with its unique motions, and features an up-to-date static fallback image.
 
 ---
 

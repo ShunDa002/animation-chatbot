@@ -27,6 +27,7 @@ const config = [
     ignores: [
       'node_modules/**',
       '.next/**',
+      '.cloudflare/**',
       'out/**',
       'coverage/**',
       'playwright-report/**',

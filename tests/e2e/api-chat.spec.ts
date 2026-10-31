@@ -220,7 +220,7 @@ test.describe('T042: nothing sensitive is ever in a response body (FR-030, SC-00
       const body = await response.text();
 
       expect(body).not.toContain('stub-key-4f3a9c-not-real');
-      expect(body).not.toContain('You are Aria');
+      expect(body).not.toContain('You are REM');
       expect(body).not.toContain('emotional cue');
       expect(body).not.toContain('groq');
       expect(body).not.toContain('Groq');

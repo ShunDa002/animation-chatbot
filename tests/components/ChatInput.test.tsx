@@ -42,15 +42,15 @@ describe('ChatInput - User Story 1 (Single-line Input Entry)', () => {
 });
 
 describe('ChatInput - User Story 2 (Multi-line Morph and Dual-Zone Layout)', () => {
-  it('morphs into rounded-2xl card with dual-zone layout when text exceeds 36 chars or newlines (T009)', async () => {
+  it('morphs into rounded-2xl card with dual-zone layout when text exceeds 48 chars or newlines (T009)', async () => {
     const { container } = render(<ChatInput onSend={vi.fn()} disabled={false} />);
     const textarea = screen.getByRole('textbox');
     const composerBox = container.querySelector('.composer-box');
 
     expect(composerBox?.getAttribute('data-multiline')).toBe('false');
 
-    // Exceed 36 characters
-    await userEvent.type(textarea, 'This is a message that definitely exceeds 36 characters');
+    // Exceed 48 characters
+    await userEvent.type(textarea, 'This is a message that definitely exceeds 48 characters');
     expect(composerBox?.getAttribute('data-multiline')).toBe('true');
     expect(composerBox?.className).toContain('rounded-2xl');
 

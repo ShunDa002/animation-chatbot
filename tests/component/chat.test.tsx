@@ -33,6 +33,8 @@ function mockConversation(overrides: Partial<Conversation> = {}): Conversation {
     inFlight: false,
     notice: null,
     announcement: null,
+    isBackendReady: true,
+    retryStartup: vi.fn(),
     send: vi.fn(),
     resume: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
@@ -410,7 +412,7 @@ describe('MessageLog', () => {
     expect(screen.getByTestId('thinking-bubble')).toBeTruthy();
     expect(screen.getByTestId('thinking-dots')).toBeTruthy();
     expect(screen.getByRole('status', { name: /thinking/i })).toBeTruthy();
-    expect(screen.getByText('Aria')).toBeTruthy();
+    expect(screen.getByText('REM')).toBeTruthy();
 
     const bubble = screen.getByTestId('thinking-bubble');
     expect(bubble.querySelector('[data-testid="character-icon"]')).toBeTruthy();

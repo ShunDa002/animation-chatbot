@@ -27,7 +27,7 @@ test.describe('Endurance and resource stability (T071)', () => {
     test.setTimeout(90_000);
     await page.goto('/');
 
-    await expect(page.getByRole('img', { name: /Aria/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('img', { name: /REM/i })).toBeVisible({ timeout: 5000 });
     // Wait for the renderer to be live before endurance turns (SC-011)
     await page.waitForFunction(() => typeof (window as any).__setEmotion === 'function', null, {
       timeout: 10_000,

@@ -36,6 +36,8 @@ export interface SidebarProps {
   onSelectConversation?: (id: string, threadId?: string) => void;
   /** Currently active thread ID */
   activeThreadId?: string | null;
+  /** When false during startup, holds back GET /conversations and renders skeleton loader (FR-040) */
+  isBackendReady?: boolean;
   /** Optional class name */
   className?: string;
 }
@@ -75,6 +77,7 @@ export default function Sidebar({
   onNewChat,
   onSelectConversation,
   activeThreadId,
+  isBackendReady = true,
   className = '',
 }: SidebarProps) {
   const [internalConversations, setInternalConversations] = useState<ConversationItem[]>([]);
@@ -82,15 +85,16 @@ export default function Sidebar({
   const [internalError, setInternalError] = useState<string | null>(null);
   const [retryTrigger, setRetryTrigger] = useState(0);
 
-  // Fetch dynamic conversations from GET /conversations if not provided via props
+  // Fetch dynamic conversations from GET /conversations if not provided via props and backend is ready
   useEffect(() => {
-    if (controlledConversations !== undefined) {
+    if (controlledConversations !== undefined || !isBackendReady) {
       return;
     }
 
     const abortController = new AbortController();
 
     async function load() {
+      setInternalLoading(true);
       try {
         const data = await fetchConversations(abortController.signal);
         setInternalConversations(data);
@@ -108,22 +112,35 @@ export default function Sidebar({
     return () => {
       abortController.abort();
     };
-  }, [controlledConversations, retryTrigger]);
+  }, [controlledConversations, retryTrigger, isBackendReady]);
 
-  // Listen for newly created conversation on first message sent (FR-038, T030a)
+  // Listen for newly created or updated conversation (FR-038, T030a)
   useEffect(() => {
     const handleNewConv = (e: Event) => {
       const customEvent = e as CustomEvent<ConversationItem>;
       if (customEvent.detail) {
+        setInternalError(null);
         setInternalConversations((prev) => {
-          if (
-            prev.some(
-              (c) =>
-                c.id === customEvent.detail.id ||
-                c.threadId === customEvent.detail.threadId
-            )
-          ) {
-            return prev;
+          const existingIndex = prev.findIndex(
+            (c) =>
+              c.id === customEvent.detail.id ||
+              c.threadId === customEvent.detail.threadId
+          );
+          if (existingIndex !== -1) {
+            const updated = [...prev];
+            const existing = updated[existingIndex];
+            if (existing) {
+              updated[existingIndex] = {
+                ...existing,
+                ...customEvent.detail,
+                title:
+                  existing.title && existing.title !== 'New Conversation'
+                    ? existing.title
+                    : customEvent.detail.title,
+                updatedAt: customEvent.detail.updatedAt || new Date().toISOString(),
+              };
+              return updated;
+            }
           }
           return [customEvent.detail, ...prev];
         });
@@ -143,7 +160,12 @@ export default function Sidebar({
     setRetryTrigger((prev) => prev + 1);
   };
 
-  const effectiveLoading = controlledLoading !== undefined ? controlledLoading : (controlledConversations !== undefined ? false : internalLoading);
+  const effectiveLoading =
+    controlledLoading !== undefined
+      ? controlledLoading
+      : controlledConversations !== undefined
+        ? false
+        : !isBackendReady || internalLoading;
   const effectiveError = controlledError !== undefined ? controlledError : (controlledConversations !== undefined ? null : internalError);
   const effectiveList = controlledConversations !== undefined ? controlledConversations : internalConversations;
 
@@ -182,7 +204,7 @@ export default function Sidebar({
                 aria-hidden="true"
               />
               <span className="font-semibold text-sm sm:text-base text-[var(--text)] tracking-tight truncate">
-                Aria
+                REM
               </span>
             </div>
           ) : (
@@ -369,7 +391,7 @@ export default function Sidebar({
         {/* Footer info */}
         {!isCollapsed && (
           <div className="p-3 border-t border-[var(--border)] text-[11px] text-[var(--text-muted)]">
-            <span>Live2D Model (Remu)</span>
+            <span>Live2D Model (REM)</span>
           </div>
         )}
       </aside>

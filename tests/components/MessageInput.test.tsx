@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import MessageInput from '@/components/MessageInput';
 import { copy } from '@/lib/ui/copy';
@@ -35,6 +35,10 @@ describe('MessageInput - User Story 1 (Single-line Input Entry)', () => {
     // Send button
     const sendBtn = screen.getByRole('button', { name: copy.sendLabel });
     expect(sendBtn).toBeTruthy();
+
+    // Hidden file input has accessible label for a11y (FR-003, SC-014)
+    const fileInput = screen.getByTestId('rag-file-input');
+    expect(fileInput.getAttribute('aria-label')).toBe(copy.ragBrowseLabel);
   });
 
   it('renders as a pill-shaped container in single-line mode', () => {
@@ -55,6 +59,29 @@ describe('MessageInput - User Story 1 (Single-line Input Entry)', () => {
     // Upward arrow icon inside send button
     const arrowSvg = sendBtn.querySelector('svg');
     expect(arrowSvg).toBeTruthy();
+  });
+
+  it('locks textarea to a fixed single-line height and suppresses vertical scrolling with overflow-y hidden', () => {
+    render(<MessageInput onSend={vi.fn()} disabled={false} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    // Fixed single-line height (1.5rem) and overflow-y hidden in non-expanded mode (FR-001, SC-006)
+    expect(textarea.style.height).toBe('1.5rem');
+    expect(textarea.style.overflowY).toBe('hidden');
+  });
+
+  it('renders placeholder matching user-typed text font size with calibrated padding to prevent clipping', () => {
+    render(<MessageInput onSend={vi.fn()} disabled={false} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    expect(textarea.placeholder).toBe(copy.inputPlaceholder);
+    expect(textarea.className).toContain('text-sm');
+    expect(textarea.className).toContain('sm:text-base');
+    expect(textarea.className).toContain('leading-6');
+    expect(textarea.className).toContain('block');
+    expect(textarea.className).toContain('py-0');
+    expect(textarea.style.height).toBe('1.5rem');
+    expect(textarea.style.overflowY).toBe('hidden');
   });
 });
 
@@ -89,28 +116,32 @@ describe('MessageInput - User Story 2 (Multi-line Morph and Dual-Zone Layout)', 
     expect(rightZone?.querySelector(`button[aria-label="${copy.sendLabel}"]`)).toBeTruthy();
   });
 
-  it('stays as a pill when text is <= 36 chars and morphs to a card when exceeding 36 chars', async () => {
+  it('stays as a pill when text is <= 48 chars and morphs to a card when exceeding 48 chars', async () => {
     const { container } = render(<MessageInput onSend={vi.fn()} disabled={false} />);
     const composerBox = container.querySelector('.composer-box');
     const textarea = screen.getByRole('textbox');
 
-    // Exactly 36 characters
-    const text36 = '123456789012345678901234567890123456';
-    expect(text36.length).toBe(36);
+    // Exactly 48 characters
+    const text48 = '123456789012345678901234567890123456789012345678';
+    expect(text48.length).toBe(48);
 
-    await userEvent.type(textarea, text36);
+    await userEvent.type(textarea, text48);
     expect(composerBox?.getAttribute('data-multiline')).toBe('false');
     expect(composerBox?.className).toContain('rounded-full');
 
-    // Type 1 more character to exceed 36 chars (37 chars)
-    await userEvent.type(textarea, '7');
-    expect(composerBox?.getAttribute('data-multiline')).toBe('true');
-    expect(composerBox?.className).toContain('rounded-2xl');
+    // Type 1 more character to exceed 48 chars (49 chars)
+    await userEvent.type(textarea, '9');
+    await waitFor(() => {
+      expect(container.querySelector('.composer-box')?.getAttribute('data-multiline')).toBe('true');
+    });
+    expect(container.querySelector('.composer-box')?.className).toContain('rounded-2xl');
 
-    // Backspace back to 36 chars
+    // Backspace back to 48 chars
     await userEvent.type(textarea, '{Backspace}');
-    expect(composerBox?.getAttribute('data-multiline')).toBe('false');
-    expect(composerBox?.className).toContain('rounded-full');
+    await waitFor(() => {
+      expect(container.querySelector('.composer-box')?.getAttribute('data-multiline')).toBe('false');
+    });
+    expect(container.querySelector('.composer-box')?.className).toContain('rounded-full');
   });
 
   it('preserves the textarea DOM element across single-line to multi-line transitions (no remounting)', async () => {
@@ -131,6 +162,30 @@ describe('MessageInput - User Story 2 (Multi-line Morph and Dual-Zone Layout)', 
     // Check max-height class or style for 5 lines (e.g. max-h-[7.5rem] or similar ~120px)
     expect(textarea.className).toMatch(/max-h-\[(?:7\.5rem|120px|125px|8rem)\]/);
     expect(textarea.className).toContain('overflow-y-auto');
+  });
+
+  it('keeps overflow-y hidden during multi-line expansion up to 5 lines, and enables overflow-y auto when exceeding 5 lines', async () => {
+    render(<MessageInput onSend={vi.fn()} disabled={false} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    // Type multi-line text that stays within 5 lines (e.g. 2 lines)
+    await userEvent.type(textarea, 'Line 1{Shift>}{Enter}{/Shift}Line 2');
+    expect(textarea.style.overflowY).toBe('hidden');
+    expect(textarea.style.height).toBe('40px');
+
+    // Simulate exceeding 5 lines by setting scrollHeight > 120px (e.g. 150px)
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 150 });
+    // Trigger update
+    await userEvent.type(textarea, '{Shift>}{Enter}{/Shift}Line 3');
+    expect(textarea.style.height).toBe('120px');
+    expect(textarea.style.overflowY).toBe('auto');
+
+    // Reverting to single line restores fixed height and overflow-y hidden
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 24 });
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, 'Single line');
+    expect(textarea.style.height).toBe('1.5rem');
+    expect(textarea.style.overflowY).toBe('hidden');
   });
 });
 
@@ -377,7 +432,318 @@ describe('MessageInput - Dynamic Models from Backend', () => {
 
     expect(onSend).toHaveBeenCalledWith('Hello world', 'custom-model-2');
   });
+
+  it('gates POST /models fetch when isBackendReady is false until backend is ready (FR-040)', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ['gated-model-1', 'gated-model-2'],
+    });
+    globalThis.fetch = fetchMock;
+
+    try {
+      const { rerender } = render(<MessageInput onSend={vi.fn()} isBackendReady={false} />);
+
+      // fetchMock should not have been called while isBackendReady is false
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      // Transition isBackendReady to true
+      rerender(<MessageInput onSend={vi.fn()} isBackendReady={true} />);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('option', { name: 'gated-model-1' })).toBeTruthy();
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
+describe('MessageInput - User Story 9 (RAG Document Upload via Attachment Dropdown and Sticky Pill)', () => {
+  it('toggles the Attachment dropdown menu with Browse files and resume.pdf separated by a divider', async () => {
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" />);
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
 
+    // Initially dropdown is not open
+    expect(screen.queryByTestId('rag-dropdown-menu')).toBeNull();
+    expect(attachmentBtn.getAttribute('aria-expanded')).toBe('false');
 
+    // Click to open dropdown
+    await userEvent.click(attachmentBtn);
+    expect(screen.getByTestId('rag-dropdown-menu')).toBeTruthy();
+    expect(attachmentBtn.getAttribute('aria-expanded')).toBe('true');
+
+    // Verify option 1: Browse files
+    const browseOpt = screen.getByTestId('rag-dropdown-browse');
+    expect(browseOpt).toBeTruthy();
+    expect(browseOpt.textContent).toContain(copy.ragBrowseLabel);
+
+    // Verify separator
+    const separator = screen.getByRole('separator');
+    expect(separator).toBeTruthy();
+
+    // Verify option 2: resume.pdf
+    const resumeOpt = screen.getByTestId('rag-dropdown-resume');
+    expect(resumeOpt).toBeTruthy();
+    expect(resumeOpt.textContent).toContain(copy.ragResumeOptionLabel);
+
+    // Click to close
+    await userEvent.click(attachmentBtn);
+    expect(screen.queryByTestId('rag-dropdown-menu')).toBeNull();
+    expect(attachmentBtn.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes dropdown when clicking outside or pressing Escape', async () => {
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" />);
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+
+    // Open dropdown
+    await userEvent.click(attachmentBtn);
+    expect(screen.getByTestId('rag-dropdown-menu')).toBeTruthy();
+
+    // Press Escape
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('rag-dropdown-menu')).toBeNull();
+
+    // Open again
+    await userEvent.click(attachmentBtn);
+    expect(screen.getByTestId('rag-dropdown-menu')).toBeTruthy();
+
+    // Click outside
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId('rag-dropdown-menu')).toBeNull();
+  });
+
+  it('rejects invalid files client-side and displays error in document pill with cancel button', async () => {
+    const mockUploadFn = vi.fn();
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    const invalidFile = new File(['code'], 'malicious.exe', { type: 'application/x-msdownload' });
+    fireEvent.change(fileInput, { target: { files: [invalidFile] } });
+
+    // Document pill appears with alert role and error message
+    const pill = screen.getByTestId('rag-document-pill');
+    expect(pill).toBeTruthy();
+    expect(pill.getAttribute('role')).toBe('alert');
+    expect(screen.getByText(copy.ragErrorUnsupportedFormat)).toBeTruthy();
+    expect(mockUploadFn).not.toHaveBeenCalled();
+
+    // Attachment button is now disabled with tooltip
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(true);
+    expect(attachmentBtn.getAttribute('title')).toBe(copy.ragAttachmentDisabledTooltip);
+
+    // Clicking cancel button dismisses pill and re-enables attachment button
+    const cancelBtn = screen.getByTestId('rag-pill-cancel-btn');
+    await userEvent.click(cancelBtn);
+    expect(screen.queryByTestId('rag-document-pill')).toBeNull();
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('immediately uploads valid file from Browse and renders sticky pill with progress and ready states', async () => {
+    let resolveUpload!: (value: any) => void;
+    const mockUploadPromise = new Promise((res) => {
+      resolveUpload = res;
+    });
+
+    const mockUploadFn = vi.fn().mockImplementation((threadId, file, options) => {
+      options?.onUploadProgress?.(50);
+      options?.onProcessingStart?.();
+      return mockUploadPromise;
+    });
+
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    // User chooses Browse files from dropdown
+    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
+    await userEvent.click(screen.getByTestId('rag-dropdown-browse'));
+
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    const validFile = new File(['valid pdf content'], 'report.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+
+    // Upload started immediately
+    expect(mockUploadFn).toHaveBeenCalledWith('thread-test-123', validFile, expect.any(Object));
+
+    // Sticky pill appears stacked above composer
+    const pill = screen.getByTestId('rag-document-pill');
+    expect(pill).toBeTruthy();
+    expect(screen.getByText('report.pdf')).toBeTruthy();
+    expect(screen.getByText('PDF')).toBeTruthy();
+
+    // Attachment button is disabled during upload
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(true);
+    expect(attachmentBtn.getAttribute('title')).toBe(copy.ragAttachmentDisabledTooltip);
+
+    // Resolves upload
+    resolveUpload({ status: 'ready', duplicate: false, filename: 'report.pdf' });
+
+    await waitFor(() => {
+      expect(screen.getByText(copy.ragStatusReady)).toBeTruthy();
+    });
+
+    // Attachment button remains disabled because document is active
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('immediately displays sticky document pill with upload progress when selecting resume.pdf option', async () => {
+    let resolveResumeFetch!: (file: File) => void;
+    const mockResumeFetchPromise = new Promise<File>((res) => {
+      resolveResumeFetch = res;
+    });
+
+    let resolveUpload!: (value: any) => void;
+    const mockUploadPromise = new Promise((res) => {
+      resolveUpload = res;
+    });
+
+    const mockUploadFn = vi.fn().mockReturnValue(mockUploadPromise);
+    const mockResumeFile = new File(['resume content'], 'resume.pdf', { type: 'application/pdf' });
+    const mockLoadResumeFn = vi.fn().mockReturnValue(mockResumeFetchPromise);
+
+    render(
+      <MessageInput
+        onSend={vi.fn()}
+        threadId="thread-test-123"
+        uploadFn={mockUploadFn}
+        loadResumeFn={mockLoadResumeFn}
+      />,
+    );
+
+    // Open dropdown and select resume.pdf
+    await userEvent.click(screen.getByRole('button', { name: copy.attachmentLabel }));
+    await userEvent.click(screen.getByTestId('rag-dropdown-resume'));
+
+    expect(mockLoadResumeFn).toHaveBeenCalledTimes(1);
+
+    // Pill is immediately displayed above input with upload progress BEFORE resume asset finishes loading
+    expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+    expect(screen.getByText('resume.pdf')).toBeTruthy();
+    expect(screen.getByText('PDF')).toBeTruthy();
+    const attachBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    expect(attachBtn.hasAttribute('disabled')).toBe(true);
+    expect(attachBtn.getAttribute('title')).toBe(copy.ragAttachmentDisabledTooltip);
+
+    // Resolve the resume asset loading
+    resolveResumeFetch(mockResumeFile);
+
+    await waitFor(() => {
+      expect(mockUploadFn).toHaveBeenCalledWith('thread-test-123', mockResumeFile, expect.any(Object));
+    });
+
+    resolveUpload({ status: 'ready', duplicate: false, filename: 'resume.pdf' });
+    await waitFor(() => {
+      expect(screen.getByText(copy.ragStatusReady)).toBeTruthy();
+    });
+  });
+
+  it('displays informational success inside pill when backend reports duplicate document', async () => {
+    const mockUploadFn = vi.fn().mockResolvedValue({
+      status: 'already_added',
+      duplicate: true,
+      filename: 'existing.pdf',
+    });
+
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['content'], 'existing.pdf')] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+      expect(screen.getByText(copy.ragStatusDuplicate)).toBeTruthy();
+    });
+  });
+
+  it('disables chat Send while document upload is in progress', async () => {
+    let resolveUpload!: (value: any) => void;
+    const mockUploadPromise = new Promise((res) => {
+      resolveUpload = res;
+    });
+    const mockUploadFn = vi.fn().mockReturnValue(mockUploadPromise);
+
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    // Type a sendable draft
+    const textarea = screen.getByRole('textbox');
+    await userEvent.type(textarea, 'Hello during upload');
+
+    // Send button should be enabled initially
+    const sendBtn = screen.getByRole('button', { name: copy.sendLabel });
+    expect(sendBtn.hasAttribute('disabled')).toBe(false);
+
+    // Start upload
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['content'], 'doc.txt')] } });
+
+    // Now send button must be disabled
+    expect(sendBtn.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(copy.ragUploadInProgressReason)).toBeTruthy();
+
+    resolveUpload({ status: 'ready', duplicate: false });
+    await waitFor(() => {
+      expect(sendBtn.hasAttribute('disabled')).toBe(false);
+    });
+  });
+
+  it('cancel button aborts in-flight upload, clears pill, and re-enables Attachment button', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const mockUploadPromise = new Promise(() => {}); // never resolves
+    const mockUploadFn = vi.fn().mockImplementation((threadId, file, options) => {
+      capturedSignal = options?.signal;
+      return mockUploadPromise;
+    });
+
+    render(<MessageInput onSend={vi.fn()} threadId="thread-test-123" uploadFn={mockUploadFn} />);
+
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['content'], 'long-upload.pdf')] } });
+
+    // Pill is visible and upload is in flight
+    expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+    const attachmentBtn = screen.getByRole('button', { name: copy.attachmentLabel });
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(true);
+
+    // Click cancel button
+    const cancelBtn = screen.getByTestId('rag-pill-cancel-btn');
+    await userEvent.click(cancelBtn);
+
+    // In-flight upload signal was aborted
+    expect(capturedSignal?.aborted).toBe(true);
+
+    // Pill is removed and Attachment button is re-enabled
+    expect(screen.queryByTestId('rag-document-pill')).toBeNull();
+    expect(attachmentBtn.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('scopes RAG upload state per threadId', async () => {
+    const mockUploadFn = vi.fn().mockResolvedValue({ status: 'ready', duplicate: false });
+    const { rerender } = render(<MessageInput onSend={vi.fn()} threadId="thread-A" uploadFn={mockUploadFn} />);
+
+    // Upload on Thread A
+    const fileInput = screen.getByTestId('rag-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['thread A file'], 'threadA.txt')] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+      expect(screen.getByText('threadA.txt')).toBeTruthy();
+    });
+
+    // Switch to Thread B
+    rerender(<MessageInput onSend={vi.fn()} threadId="thread-B" uploadFn={mockUploadFn} />);
+
+    // In Thread B, Thread A's document pill should NOT be visible and Attachment button is enabled
+    expect(screen.queryByTestId('rag-document-pill')).toBeNull();
+    expect(screen.getByRole('button', { name: copy.attachmentLabel }).hasAttribute('disabled')).toBe(false);
+
+    // Switch back to Thread A
+    rerender(<MessageInput onSend={vi.fn()} threadId="thread-A" uploadFn={mockUploadFn} />);
+    expect(screen.getByTestId('rag-document-pill')).toBeTruthy();
+    expect(screen.getByText('threadA.txt')).toBeTruthy();
+    expect(screen.getByRole('button', { name: copy.attachmentLabel }).hasAttribute('disabled')).toBe(true);
+  });
+});

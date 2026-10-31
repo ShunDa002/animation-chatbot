@@ -7,6 +7,7 @@
  * - CORS headers on all responses so browser can call directly
  * - Scripted streams from tests/fixtures/scripts.ts
  * - Control endpoints for quota, resets, and fault injection
+ * - POST /rag/upload -> accepts multipart/form-data (file, thread_id), returns ingestion status (FR-043-FR-047)
  *
  * Run: node tests/fixtures/mock-backend.ts [port]
  */
@@ -20,11 +21,14 @@ const PORT = Number(process.argv[2] ?? process.env.BACKEND_PORT ?? 4319);
 let quotaCount = 0;
 let storeDown = false;
 let threadFail = false;
+let readyFail = false;
+let ragFail = false;
+let ragDuplicate = false;
 
 function setCorsHeaders(res: ServerResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Mock-Duplicate');
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -114,6 +118,29 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   // Consume 1 quota on admission
   quotaCount += 1;
 
+  if (userInput.includes('META') || userInput.includes('shares')) {
+    setCorsHeaders(res);
+    res.writeHead(200, {
+      'content-type': 'application/x-ndjson; charset=utf-8',
+      'transfer-encoding': 'chunked',
+      'cache-control': 'no-store',
+      connection: 'close',
+    });
+    res.write(JSON.stringify({ type: 'start', thread_id: threadId }) + '\n');
+    res.write(JSON.stringify({ type: 'token', content: 'Processing order. ' }) + '\n');
+    res.write(
+      JSON.stringify({
+        type: 'interrupt',
+        thread_id: threadId,
+        interrupt_id: 'int-meta-1',
+        value: 'Approve buying 10 shares of META? (yes/no)',
+        resumable: true,
+      }) + '\n'
+    );
+    res.end();
+    return;
+  }
+
   const script: ProviderScript = resolveScript(userInput);
 
   if (script.errorStatus) {
@@ -173,54 +200,6 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   res.end();
 }
 
-const server = createServer((req, res) => {
-  setCorsHeaders(res);
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`);
-  const segments = url.pathname.split('/').filter(Boolean);
-
-  if (segments[0] === 'control') {
-    switch (segments[1]) {
-      case 'quota': {
-        quotaCount = Number(segments[2] ?? 0);
-        json(res, 200, { ok: true, count: quotaCount });
-        return;
-      }
-      case 'store-down':
-        storeDown = segments[2] === '1';
-        json(res, 200, { ok: true, storeDown });
-        return;
-      case 'thread-fail':
-        threadFail = segments[2] === '1';
-        json(res, 200, { ok: true, threadFail });
-        return;
-      case 'reset':
-        quotaCount = 0;
-        storeDown = false;
-        threadFail = false;
-        json(res, 200, { ok: true });
-        return;
-      case 'health':
-        json(res, 200, { ok: true });
-        return;
-      default:
-        json(res, 404, { error: 'unknown control path' });
-        return;
-    }
-  }
-
-  // Backward-compatible quota reader for existing tests
-  if (segments[0] === 'kv') {
-    json(res, 200, { result: quotaCount > 0 ? quotaCount : null });
-    return;
-  }
-
 async function handleResume(req: IncomingMessage, res: ServerResponse): Promise<void> {
   let raw = '';
   try {
@@ -261,6 +240,132 @@ async function handleStop(req: IncomingMessage, res: ServerResponse): Promise<vo
   json(res, 200, { ok: true, status: 'stopped', thread_id: parsed?.thread_id, run_id: parsed?.run_id });
 }
 
+async function handleRagUpload(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (ragFail || storeDown) {
+    text(res, 500, 'RAG upload failed due to server error');
+    return;
+  }
+
+  let raw = '';
+  try {
+    raw = await readBody(req);
+  } catch {
+    text(res, 400, 'Unable to read upload payload');
+    return;
+  }
+
+  // Extract thread_id
+  const threadIdMatch = raw.match(/name="thread_id"(?:;[^\r\n]*)?\r?\n\r?\n([^\r\n]+)/);
+  const threadId = threadIdMatch && threadIdMatch[1] ? threadIdMatch[1].trim() : '';
+
+  // Extract filename
+  const filenameMatch = raw.match(/filename="([^"]+)"/);
+  const filename = filenameMatch && filenameMatch[1] ? filenameMatch[1].trim() : 'uploaded-doc.pdf';
+
+  if (!threadId) {
+    text(res, 400, 'Missing or empty thread_id');
+    return;
+  }
+
+  const isDuplicate =
+    ragDuplicate ||
+    Boolean(req.headers['x-mock-duplicate']) ||
+    filename.toLowerCase().includes('duplicate');
+
+  if (isDuplicate) {
+    json(res, 200, {
+      status: 'duplicate',
+      duplicate: true,
+      filename,
+      original_filename: filename,
+    });
+    return;
+  }
+
+  json(res, 200, {
+    status: 'ready',
+    duplicate: false,
+    filename,
+    original_filename: filename,
+  });
+}
+
+const server = createServer((req, res) => {
+  setCorsHeaders(res);
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`);
+  const segments = url.pathname.split('/').filter(Boolean);
+
+  if (segments[0] === 'control') {
+    switch (segments[1]) {
+      case 'quota': {
+        quotaCount = Number(segments[2] ?? 0);
+        json(res, 200, { ok: true, count: quotaCount });
+        return;
+      }
+      case 'store-down':
+        storeDown = segments[2] === '1';
+        json(res, 200, { ok: true, storeDown });
+        return;
+      case 'thread-fail':
+        threadFail = segments[2] === '1';
+        json(res, 200, { ok: true, threadFail });
+        return;
+      case 'ready-fail':
+        readyFail = segments[2] === '1';
+        json(res, 200, { ok: true, readyFail });
+        return;
+      case 'rag-fail':
+        ragFail = segments[2] === '1';
+        json(res, 200, { ok: true, ragFail });
+        return;
+      case 'rag-duplicate':
+        ragDuplicate = segments[2] === '1';
+        json(res, 200, { ok: true, ragDuplicate });
+        return;
+      case 'reset':
+        quotaCount = 0;
+        storeDown = false;
+        threadFail = false;
+        readyFail = false;
+        ragFail = false;
+        ragDuplicate = false;
+        json(res, 200, { ok: true });
+        return;
+      case 'health':
+        json(res, 200, { ok: true });
+        return;
+      default:
+        json(res, 404, { error: 'unknown control path' });
+        return;
+    }
+  }
+
+  // Backward-compatible quota reader for existing tests
+  if (segments[0] === 'kv') {
+    json(res, 200, { result: quotaCount > 0 ? quotaCount : null });
+    return;
+  }
+
+  if (segments[0] === 'health') {
+    if (segments[1] === 'ready') {
+      if (readyFail || storeDown) {
+        json(res, 503, { status: 'not_ready', error: 'Database initializing' });
+        return;
+      }
+      json(res, 200, { status: 'ready' });
+      return;
+    }
+    json(res, 200, { ok: true });
+    return;
+  }
+
   if (segments[0] === 'threads') {
     void handleThreads(req, res);
     return;
@@ -281,6 +386,23 @@ async function handleStop(req: IncomingMessage, res: ServerResponse): Promise<vo
 
   if (segments[0] === 'models') {
     json(res, 200, ['model-standard', 'model-fast', 'model-pro']);
+    return;
+  }
+
+  if (segments[0] === 'rag') {
+    if (segments[1] === 'upload') {
+      void handleRagUpload(req, res);
+      return;
+    }
+  }
+
+  if (segments[0] === 'conversations') {
+    json(res, 200, []);
+    return;
+  }
+
+  if (segments[0] === 'history') {
+    json(res, 200, []);
     return;
   }
 

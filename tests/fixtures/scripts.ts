@@ -50,10 +50,10 @@ const SPLIT_MARKER: ProviderScript = {
 
 export const SCRIPTS: Record<string, ProviderScript> = {
   // --- the happy path -------------------------------------------------------
-  plain: { chunks: ['Hello ', 'there.', ' [emotion:happy]'], delayFirstMs: 40 },
+  plain: { chunks: ['Hello ', 'there.', ' [emotion:happy]'], delayFirstMs: 200 },
   multiword: {
     chunks: ['I ', 'have ', 'been ', 'thinking ', 'about ', 'that.', ' [emotion:neutral]'],
-    gapMs: 30,
+    gapMs: 60,
   },
 
   // --- cue handling (V3, V4) ------------------------------------------------

@@ -38,7 +38,7 @@ test.describe('Character reacts to what it says (US3)', () => {
       }
     });
     await page.goto('/');
-    await expect(page.getByRole('img', { name: /Aria/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('img', { name: /REM/i })).toBeVisible({ timeout: 5000 });
   });
 
   test('T057: 20 varied fixtures covering every member of the union update character aria-label (SC-006, FR-007)', async ({
@@ -78,7 +78,7 @@ test.describe('Character reacts to what it says (US3)', () => {
       await expect(bubble).toBeVisible({ timeout: 10_000 });
 
       const label = EMOTION_LABELS[emotion];
-      const regex = new RegExp(`Aria.*${label}`, 'i');
+      const regex = new RegExp(`REM.*${label}`, 'i');
       await expect(page.getByRole('img', { name: regex })).toBeVisible({ timeout: 10_000 });
       await expect(bubble).toHaveAttribute('data-status', /complete/, { timeout: 10_000 });
     }
@@ -96,7 +96,7 @@ test.describe('Character reacts to what it says (US3)', () => {
     await page.evaluate(() => {
       (window as any).__setEmotion('sad');
     });
-    await expect(page.getByRole('img', { name: /Aria.*sad/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*sad/i })).toBeVisible();
 
     // Trigger second reaction immediately while first would be playing
     await page.evaluate(() => {
@@ -104,12 +104,12 @@ test.describe('Character reacts to what it says (US3)', () => {
     });
 
     // The newer reaction wins and character reflects happy
-    await expect(page.getByRole('img', { name: /Aria.*happy/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*happy/i })).toBeVisible();
 
     // Trigger third reaction
     await page.evaluate(() => {
       (window as any).__setEmotion('surprised');
     });
-    await expect(page.getByRole('img', { name: /Aria.*surprised/i })).toBeVisible();
+    await expect(page.getByRole('img', { name: /REM.*surprised/i })).toBeVisible();
   });
 });

@@ -1,0 +1,6 @@
+title: Animation Chatbot
+description: A full-stack application designed to combat misinformation, featuring a Deepfake Image Detector powered by fine-tuned vision models and an intelligent Facts Verifier Chatbot with real-time web search capabilities.
+tags: ['Next.js', 'FastAPI', 'Hugging Face']
+githubLink: https://github.com/ShunDa002/animation-chatbot
+video: https://youtu.be/ZVyKF7aSNag
+demo: https://animation-chatbot.tay-shon-da1.workers.dev

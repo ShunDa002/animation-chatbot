@@ -14,6 +14,8 @@ export interface ChatPanelProps {
   isHistoryLoading?: boolean;
   historyError?: string | null;
   onRetryHistory?: () => void;
+  /** When false during startup, holds back POST /models in MessageInput (FR-040) */
+  isBackendReady?: boolean;
 }
 
 /**
@@ -33,27 +35,25 @@ export default function ChatPanel({
   isHistoryLoading,
   historyError,
   onRetryHistory,
+  isBackendReady,
 }: ChatPanelProps) {
   const { messages, status, notice, announcement, inFlight, send, resume, threadId } = conversation;
 
   const effectiveIsHistoryLoading = isHistoryLoading ?? conversation.isHistoryLoading ?? false;
   const effectiveHistoryError = historyError ?? conversation.historyError ?? null;
   const handleRetryHistory = onRetryHistory ?? conversation.retryHistory;
+  const isFailure = status === 'error' || status === 'limited';
 
-  const [inputDraft, setInputDraft] = useState('');
-
-  useEffect(() => {
+  const [inputDraft, setInputDraft] = useState(() => {
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
-        const saved = window.sessionStorage.getItem(STORAGE_KEY_DRAFT);
-        if (saved) {
-          setInputDraft(saved);
-        }
+        return window.sessionStorage.getItem(STORAGE_KEY_DRAFT) || '';
       }
     } catch {
       // Ignore
     }
-  }, []);
+    return '';
+  });
 
   const lastSubmittedPromptRef = useRef<string>('');
   const prevStatusRef = useRef(status);
@@ -79,8 +79,6 @@ export default function ChatPanel({
   const isThreadUnavailable = !threadId && !effectiveIsHistoryLoading;
   const isInterruptActive = messages.some((m) => m.status === 'interrupted');
   const isDisabled =
-    inFlight ||
-    isThreadUnavailable ||
     isInterruptActive ||
     effectiveIsHistoryLoading ||
     Boolean(effectiveHistoryError);
@@ -126,6 +124,32 @@ export default function ChatPanel({
           <MessageLog messages={messages} status={status} notice={notice} threadId={threadId} onResume={resume} />
         )}
 
+        <p
+          className={`status-line min-h-[1.4em] text-xs sm:text-sm m-0 transition-colors flex items-center shrink-0 drop-shadow-sm ${
+            isFailure ? 'error text-[var(--danger)]' : 'text-slate-200'
+          }`}
+        >
+          {status === 'waiting' ? (
+            <span className="waiting-indicator inline-flex items-center gap-2">
+              <span
+                className="w-2 h-2 rounded-full bg-[var(--accent)] animate-[waiting-pulse_1.4s_ease-in-out_infinite]"
+                aria-hidden="true"
+              />
+              {copy.waiting}
+            </span>
+          ) : status === 'connecting' ? (
+            <span className="connecting-indicator inline-flex items-center gap-2">
+              <span
+                className="w-2 h-2 rounded-full bg-[var(--accent)] animate-[waiting-pulse_1.4s_ease-in-out_infinite]"
+                aria-hidden="true"
+              />
+              {copy.connecting}
+            </span>
+          ) : (
+            (notice ?? '')
+          )}
+        </p>
+
         <MessageInput
           value={inputDraft}
           onChange={setInputDraft}
@@ -137,6 +161,8 @@ export default function ChatPanel({
           disabledReason={disabledReason}
           isWaitingForResponse={inFlight && !isInterruptActive}
           status={status}
+          isBackendReady={isBackendReady ?? conversation.isBackendReady}
+          threadId={threadId}
         />
 
         <Announcer status={status} announcement={announcement} notice={notice} />
